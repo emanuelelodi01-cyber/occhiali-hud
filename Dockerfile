@@ -1,22 +1,25 @@
-# Stage 1: Build Rust WASM with Dioxus CLI
-FROM rust:1.85-bookworm AS builder
+# syntax=docker/dockerfile:1
+FROM rust:1-trixie AS builder
 
-# Install pre-built cargo-binstall for lightning-fast dx installation
-RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-RUN cargo binstall --no-confirm dioxus-cli@0.7.10
-RUN rustup target add wasm32-unknown-unknown
+ARG DX_VERSION=0.7.10
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && rustup target add wasm32-unknown-unknown \
+    && curl -fsSL "https://github.com/dioxuslabs/dioxus/releases/download/v${DX_VERSION}/dx-x86_64-unknown-linux-gnu.tar.gz" \
+       | tar -xz -C /usr/local/bin dx
 
 WORKDIR /app
 
-# Copy dependency definitions and source
-COPY Cargo.toml Dioxus.toml index.html ./
+COPY Cargo.toml Cargo.lock Dioxus.toml index.html ./
 COPY assets/ ./assets/
 COPY src/ ./src/
 
-# Build optimized WebAssembly PWA
 RUN dx build --platform web --release
 
-# Stage 2: Ultra-lightweight Nginx runtime (< 20MB)
+# Stage 2: Nginx Web Server (<20MB)
 FROM nginx:alpine
 
 COPY --from=builder /app/target/dx/occhiali-hud/release/web/public /usr/share/nginx/html
