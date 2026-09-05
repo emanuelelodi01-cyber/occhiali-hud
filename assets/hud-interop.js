@@ -1,4 +1,4 @@
-// RayNeo Air 4 Pro - GTA HUD Hardware & Sensor Interop Bridge
+// RayNeo Air 4 Pro - GTA 6 Real-Time Map HUD Hardware & Sensor Interop Bridge
 window.RayNeoHUD = {
   wakeLock: null,
   watchId: null,
@@ -7,6 +7,8 @@ window.RayNeoHUD = {
   batteryLevel: 1.0,
   batteryCharging: false,
   reverseGeocodeCache: {},
+  tileCache: new Map(),
+  sweepAngle: 0,
 
   // Request iOS Device Orientation permission
   async requestOrientation() {
@@ -127,7 +129,35 @@ window.RayNeoHUD = {
     return 'LOS SANTOS';
   },
 
-  // Procedural canvas radar rendering
+  // Slippy Map math for real tile coordinates
+  lon2tile(lon, zoom) {
+    return ((lon + 180) / 360) * Math.pow(2, zoom);
+  },
+
+  lat2tile(lat, zoom) {
+    const latRad = (lat * Math.PI) / 180;
+    return (
+      ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) *
+      Math.pow(2, zoom)
+    );
+  },
+
+  // CartoDB Dark Matter tile caching (zero API key, true black OLED background)
+  getTileImage(z, x, y) {
+    const key = `${z}/${x}/${y}`;
+    if (this.tileCache.has(key)) {
+      return this.tileCache.get(key);
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const subdomains = ['a', 'b', 'c', 'd'];
+    const s = subdomains[Math.abs(x + y) % subdomains.length];
+    img.src = `https://${s}.basemaps.cartocdn.com/dark_all/${z}/${x}/${y}.png`;
+    this.tileCache.set(key, img);
+    return img;
+  },
+
+  // GTA 6 Real-Time Canvas Radar Rendering
   drawRadarCanvas(canvasId, lat, lon, heading, zoom, speed, theme) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
@@ -138,107 +168,185 @@ window.RayNeoHUD = {
     const cy = h / 2;
     const r = (w / 2) - 8;
 
+    // Advance 60fps radar sweep line
+    this.sweepAngle = (this.sweepAngle + 2.5) % 360;
+
     ctx.clearRect(0, 0, w, h);
 
-    // Circular clipping
+    // GTA 6 Squircle Clipping (modern rounded square for GTA VI)
     ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    const cornerRadius = 32;
+    if (ctx.roundRect) {
+      ctx.roundRect(8, 8, w - 16, h - 16, cornerRadius);
+    } else {
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    }
     ctx.clip();
 
-    // Background: pitch black with slight translucent dark radar circle
-    ctx.fillStyle = '#020704';
-    ctx.fill();
+    // 1. OLED Base: Pure black (#000000) for RayNeo AR transparency
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, w, h);
 
-    // Radar distance circles
-    ctx.strokeStyle = theme.ringColor || 'rgba(0, 255, 128, 0.25)';
+    // 2. REAL MAP TILES UNDER ROTATION
+    const currentZoom = Math.round(zoom || 16);
+    const tileXFloat = this.lon2tile(lon, currentZoom);
+    const tileYFloat = this.lat2tile(lat, currentZoom);
+    const centerTileX = Math.floor(tileXFloat);
+    const centerTileY = Math.floor(tileYFloat);
+    const subPixelX = (tileXFloat - centerTileX) * 256;
+    const subPixelY = (tileYFloat - centerTileY) * 256;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((-heading * Math.PI) / 180);
+
+    // Render 3x3 grid of real map tiles around GPS coordinates
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const tx = centerTileX + dx;
+        const ty = centerTileY + dy;
+        const img = this.getTileImage(currentZoom, tx, ty);
+        const posX = dx * 256 - subPixelX;
+        const posY = dy * 256 - subPixelY;
+
+        if (img && img.complete && img.naturalWidth > 0) {
+          ctx.drawImage(img, posX, posY, 256, 256);
+        } else {
+          // Tactical grid while tile is loading
+          ctx.strokeStyle = 'rgba(0, 240, 255, 0.12)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(posX, posY, 256, 256);
+        }
+      }
+    }
+
+    // Rotating Cardinal Points (N, E, S, W) on Real Map
+    const cardinalDist = r - 14;
+    ctx.font = 'bold 12px Orbitron, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // North (GTA VI bright red neon)
+    ctx.fillStyle = '#ff2a4a';
+    ctx.shadowColor = '#ff2a4a';
+    ctx.shadowBlur = 8;
+    ctx.fillText('N', 0, -cardinalDist);
+
+    // East, South, West (Neon white/cyan)
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 5;
+    ctx.fillText('S', 0, cardinalDist);
+    ctx.fillText('E', cardinalDist, 0);
+    ctx.fillText('W', -cardinalDist, 0);
+
+    ctx.restore();
+
+    // 3. Radial Vignette for AR Transparency:
+    // Fades real map to pure black at the borders so it blends invisibly with reality!
+    const vignette = ctx.createRadialGradient(cx, cy, r * 0.45, cx, cy, r);
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(0.75, 'rgba(0, 0, 0, 0.35)');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.98)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+
+    // 4. Tactical Radar Range Rings
     ctx.lineWidth = 1;
-    [r * 0.33, r * 0.66, r * 0.98].forEach((cr) => {
+    [r * 0.33, r * 0.66, r * 0.96].forEach((cr) => {
+      ctx.strokeStyle = theme.ringColor || 'rgba(0, 240, 255, 0.22)';
       ctx.beginPath();
       ctx.arc(cx, cy, cr, 0, Math.PI * 2);
       ctx.stroke();
     });
 
-    // Crosshairs
-    ctx.strokeStyle = theme.crossColor || 'rgba(0, 255, 128, 0.15)';
+    // 5. GTA 6 Radar Sweep Line (rotating 360° radar scan beam)
+    const sweepRad = (this.sweepAngle * Math.PI) / 180;
+    const sweepGrad = ctx.createRadialGradient(cx, cy, 4, cx, cy, r);
+    sweepGrad.addColorStop(0, 'rgba(0, 240, 255, 0.28)');
+    sweepGrad.addColorStop(1, 'rgba(0, 240, 255, 0)');
+    ctx.fillStyle = sweepGrad;
     ctx.beginPath();
-    ctx.moveTo(cx - r, cy);
-    ctx.lineTo(cx + r, cy);
-    ctx.moveTo(cx, cy - r);
-    ctx.lineTo(cx, cy + r);
-    ctx.stroke();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, sweepRad - 0.4, sweepRad);
+    ctx.closePath();
+    ctx.fill();
 
-    // Simulated / Procedural roads grid around coordinates
+    // 6. Player Field of View Sight Cone (pointing forward)
+    const coneGrad = ctx.createRadialGradient(cx, cy, 6, cx, cy, 80);
+    coneGrad.addColorStop(0, 'rgba(0, 240, 255, 0.35)');
+    coneGrad.addColorStop(1, 'rgba(0, 240, 255, 0)');
+    ctx.fillStyle = coneGrad;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, 75, -Math.PI / 2 - 0.38, -Math.PI / 2 + 0.38);
+    ctx.closePath();
+    ctx.fill();
+
+    // 7. GTA 6 Aerodynamic Delta Player Blip
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate((-heading * Math.PI) / 180);
 
-    // Draw road grid
-    ctx.strokeStyle = theme.roadColor || 'rgba(70, 180, 255, 0.45)';
-    ctx.lineWidth = 2.5;
-
-    // Generate stable roads based on lat/lon
-    const gridSpacing = 45;
-    const offsetX = ((lon * 10000) % gridSpacing);
-    const offsetY = ((lat * 10000) % gridSpacing);
-
+    // Neon cyan glow
+    ctx.fillStyle = theme.playerColor || '#00f0ff';
+    ctx.shadowColor = theme.playerColor || '#00f0ff';
+    ctx.shadowBlur = 12;
     ctx.beginPath();
-    for (let x = -r - gridSpacing; x <= r + gridSpacing; x += gridSpacing) {
-      ctx.moveTo(x - offsetX, -r);
-      ctx.lineTo(x - offsetX, r);
-    }
-    for (let y = -r - gridSpacing; y <= r + gridSpacing; y += gridSpacing) {
-      ctx.moveTo(-r, y - offsetY);
-      ctx.lineTo(r, y - offsetY);
-    }
-    ctx.stroke();
+    ctx.moveTo(0, -12);
+    ctx.lineTo(8, 8);
+    ctx.lineTo(0, 4);
+    ctx.lineTo(-8, 8);
+    ctx.closePath();
+    ctx.fill();
 
-    // Main Avenue diagonal
-    ctx.strokeStyle = theme.mainRoadColor || 'rgba(255, 215, 0, 0.6)';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.moveTo(-r, 0 - offsetY);
-    ctx.lineTo(r, 0 - offsetY);
-    ctx.stroke();
-
-    // Cardinal directions rotating with world
-    ctx.font = 'bold 12px Orbitron, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ff4444';
-    ctx.fillText('N', 0, -r + 14);
+    // Inner bright white stealth core
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('S', 0, r - 14);
-    ctx.fillText('E', r - 14, 0);
-    ctx.fillText('W', -r + 14, 0);
-
-    ctx.restore();
-
-    // Center player blip (GTA triangular arrow)
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.fillStyle = theme.playerColor || '#00ffcc';
-    ctx.shadowColor = theme.playerColor || '#00ffcc';
-    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.moveTo(0, -9);
-    ctx.lineTo(6, 7);
-    ctx.lineTo(0, 3);
-    ctx.lineTo(-6, 7);
+    ctx.lineTo(4, 5);
+    ctx.lineTo(0, 2);
+    ctx.lineTo(-4, 5);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
 
-    // Restore clip
-    ctx.restore();
+    ctx.restore(); // End clipping
 
-    // Outer neon ring
+    // 8. GTA 6 Holographic Outer Bezel with Vice City Magenta & Cyan Accents
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = theme.border || '#00ff88';
+    if (ctx.roundRect) {
+      ctx.roundRect(8, 8, w - 16, h - 16, cornerRadius);
+    } else {
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    }
+    ctx.strokeStyle = theme.border || '#00f0ff';
     ctx.lineWidth = 2.5;
-    ctx.shadowColor = theme.border || '#00ff88';
-    ctx.shadowBlur = 6;
+    ctx.shadowColor = theme.border || '#00f0ff';
+    ctx.shadowBlur = 8;
     ctx.stroke();
+
+    // GTA 6 Signature Magenta Corner Tactical Brackets
+    const bLen = 16;
+    ctx.strokeStyle = '#ff007f';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#ff007f';
+    ctx.shadowBlur = 8;
+
+    // Top-left bracket
+    ctx.beginPath();
+    ctx.moveTo(8, 8 + bLen);
+    ctx.lineTo(8, 8);
+    ctx.lineTo(8 + bLen, 8);
+    ctx.stroke();
+
+    // Bottom-right bracket
+    ctx.beginPath();
+    ctx.moveTo(w - 8, h - 8 - bLen);
+    ctx.lineTo(w - 8, h - 8);
+    ctx.lineTo(w - 8 - bLen, h - 8);
+    ctx.stroke();
+    ctx.restore();
   }
 };

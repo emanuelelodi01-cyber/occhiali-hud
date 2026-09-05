@@ -191,7 +191,7 @@ fn App() -> Element {
 
             // Bottom Bar: Minimap Radar (Left) + Speedometer (Right)
             div { class: "hud-bottom-bar",
-                div { class: "gta-radar-wrapper",
+                div { class: "gta6-radar-wrapper",
                     Radar {
                         latitude: cur_gps.latitude,
                         longitude: cur_gps.longitude,
