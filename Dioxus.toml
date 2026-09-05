@@ -1,0 +1,12 @@
+[application]
+name = "occhiali-hud"
+default_platform = "web"
+asset_dir = "assets"
+
+[web.app]
+title = "RayNeo AR HUD - GTA Mode"
+base_path = ""
+
+[web.watcher]
+reload_html = true
+watch_path = ["src", "assets"]
