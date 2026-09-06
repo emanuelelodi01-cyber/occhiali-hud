@@ -834,6 +834,10 @@ window.RayNeoHUD = {
             this.speak(data.content);
           }
         }
+      } else if (data.type === 'transcription_result') {
+        if (data.text) {
+          this.lastUserMessage = data.text;
+        }
       }
       this.notify();
     },
@@ -898,110 +902,119 @@ window.RayNeoHUD = {
       this.notify();
     },
 
-    initSpeechRecognition() {
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRec) {
-        console.warn('[Comms] SpeechRecognition non supportata su questo browser');
-        return;
-      }
-      const rec = new SpeechRec();
-      rec.lang = 'it-IT';
-      rec.continuous = false;
-      rec.interimResults = true;
-      rec.maxAlternatives = 1;
+    mediaRecorder: null,
+    audioChunks: [],
+    audioStream: null,
 
-      rec.onstart = () => {
-        this.isListening = true;
-        this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
-        this.notify();
-      };
+    startRecording() {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          this.lastUserMessage = '⚠️ Registrazione audio non supportata.';
+          this.notify();
+          return false;
+        }
 
-      rec.onresult = (event) => {
-        let interim = '';
-        let final = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
+        // Detect supported audio mimeType on iOS Safari
+        let mimeType = '';
+        if (typeof MediaRecorder !== 'undefined') {
+          if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+          else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+          else if (MediaRecorder.isTypeSupported('audio/aac')) mimeType = 'audio/aac';
+        }
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+          this.audioStream = stream;
+          this.audioChunks = [];
+          
+          try {
+            this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+          } catch (e) {
+            this.mediaRecorder = new MediaRecorder(stream);
           }
-        }
-        if (final) {
-          this.lastUserMessage = final;
-          this.sendMessage(final);
+
+          this.mediaRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) {
+              this.audioChunks.push(e.data);
+            }
+          };
+
+          this.mediaRecorder.onstop = () => {
+            if (this.audioStream) {
+              this.audioStream.getTracks().forEach(t => t.stop());
+              this.audioStream = null;
+            }
+
+            const finalMime = (this.mediaRecorder && this.mediaRecorder.mimeType) || mimeType || 'audio/mp4';
+            const blob = new Blob(this.audioChunks, { type: finalMime });
+            this.audioChunks = [];
+
+            if (blob.size < 400) {
+              this.lastUserMessage = '⚠️ Audio troppo breve. Riprova.';
+              this.notify();
+              return;
+            }
+
+            this.lastUserMessage = '⏳ Trascrizione vocale in corso...';
+            this.notify();
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64Data = (reader.result || '').split(',')[1];
+              if (base64Data && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                console.log('[Comms] Invio blob vocale (' + blob.size + ' bytes) a PC...');
+                this.ws.send(JSON.stringify({
+                  type: 'user_audio',
+                  audio: base64Data,
+                  mimeType: finalMime,
+                  timestamp: Date.now()
+                }));
+              }
+            };
+            reader.readAsDataURL(blob);
+          };
+
+          this.mediaRecorder.start(200);
+          this.isListening = true;
+          this.lastUserMessage = '🎙️ In ascolto... Parla ora! (Tocca per inviare)';
+          this.notify();
+        }).catch((err) => {
+          console.warn('[Comms] Errore microfono getUserMedia:', err);
           this.isListening = false;
-        } else if (interim) {
-          this.lastUserMessage = interim;
-        }
-        this.notify();
-      };
+          this.lastUserMessage = '⚠️ Errore microfono: ' + (err.name || err.message || err);
+          this.notify();
+        });
 
-      rec.onerror = (err) => {
-        console.warn('[Comms] Errore riconoscimento vocale:', err);
-        this.isListening = false;
-        const errType = err.error || err.message || err;
-        if (errType === 'no-speech') {
-          this.lastUserMessage = '⚠️ Nessun audio rilevato. Riprova parlando vicino al microfono.';
-        } else if (errType === 'not-allowed') {
-          this.lastUserMessage = '⚠️ Permesso microfono negato in Safari. Abilitalo nelle Impostazioni.';
-        } else {
-          this.lastUserMessage = `⚠️ Errore microfono: ${errType}`;
-        }
-        this.notify();
-      };
-
-      rec.onend = () => {
+        return true;
+      } catch (err) {
+        console.warn('[Comms] Eccezione microfono:', err);
+        this.lastUserMessage = '⚠️ Errore microfono: ' + (err.message || err);
         this.isListening = false;
         this.notify();
-      };
+        return false;
+      }
+    },
 
-      this.recognition = rec;
+    stopRecording() {
+      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+        try { this.mediaRecorder.stop(); } catch (e) {}
+      }
+      this.isListening = false;
+      this.notify();
     },
 
     toggleListening() {
-      // Haptic feedback for tactile feel
+      // Haptic feedback
       try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
 
-      if (this.isListening) {
-        if (this.recognition) {
-          try { this.recognition.stop(); } catch (e) {}
-        }
-        this.isListening = false;
-        this.notify();
-        return false;
-      }
-
-      // Stop speech output so mic does not hear assistant
+      // Stop speech output so mic doesn't capture assistant
       this.stopSpeaking();
 
-      if (!this.recognition) {
-        this.initSpeechRecognition();
+      if (this.isListening) {
+        this.stopRecording();
+      } else {
+        this.startRecording();
       }
 
-      if (!this.recognition) {
-        this.lastUserMessage = '⚠️ Riconoscimento vocale non supportato su questo browser.';
-        this.notify();
-        return false;
-      }
-
-      try {
-        this.recognition.start();
-        this.isListening = true;
-        this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
-      } catch (err) {
-        console.warn('[Comms] Errore start riconoscimento:', err);
-        try {
-          this.initSpeechRecognition();
-          this.recognition.start();
-          this.isListening = true;
-          this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
-        } catch (e2) {
-          this.lastUserMessage = '⚠️ Errore microfono: ' + (e2.message || err.message || err);
-          this.isListening = false;
-        }
-      }
-
-      this.notify();
       return this.isListening;
     },
 

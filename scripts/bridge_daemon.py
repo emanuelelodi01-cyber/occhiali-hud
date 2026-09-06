@@ -99,6 +99,48 @@ class AntigravityBridge:
             print(f"[CDP] Errore durante iniezione CDP: {err}")
             return False
 
+    def process_audio(self, b64_data, mime_type):
+        import base64
+        import tempfile
+        import subprocess
+        import speech_recognition as sr
+
+        print("[Audio] Ricevuto stream vocale dall'HUD, elaborazione...")
+        try:
+            raw_bytes = base64.b64decode(b64_data)
+        except Exception as e:
+            print(f"[Audio] Errore decodifica base64: {e}")
+            return None
+
+        ext = ".mp4" if "mp4" in mime_type.lower() else ".webm"
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f_in:
+            f_in.write(raw_bytes)
+            in_path = f_in.name
+
+        wav_path = in_path + ".wav"
+        try:
+            cmd = ["ffmpeg", "-y", "-i", in_path, "-ar", "16000", "-ac", "1", wav_path]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+            r = sr.Recognizer()
+            with sr.AudioFile(wav_path) as source:
+                audio_data = r.record(source)
+
+            text = r.recognize_google(audio_data, language="it-IT")
+            print(f"[Audio] Trascrizione vocale completata: '{text}'")
+            return text
+        except sr.UnknownValueError:
+            print("[Audio] Nessun parlato rilevato nell'audio.")
+            return None
+        except Exception as e:
+            print(f"[Audio] Errore conversione/trascrizione audio: {e}")
+            return None
+        finally:
+            try: os.remove(in_path)
+            except: pass
+            try: os.remove(wav_path)
+            except: pass
+
     async def watch_transcript(self):
         # First read: find the current highest step_index
         if os.path.exists(self.transcript_path):
@@ -212,13 +254,32 @@ class AntigravityBridge:
                     async for message in ws:
                         try:
                             data = json.loads(message)
-                            if data.get("type") == "user_message":
+                            mtype = data.get("type")
+                            if mtype == "user_message":
                                 user_text = data.get("text", "").strip()
                                 if user_text:
                                     await self.inject_user_message(user_text)
+                            elif mtype == "user_audio":
+                                audio_b64 = data.get("audio", "")
+                                mime = data.get("mimeType", "audio/mp4")
+                                if audio_b64:
+                                    transcribed = await asyncio.to_thread(self.process_audio, audio_b64, mime)
+                                    if transcribed:
+                                        # Notify HUD of recognized text
+                                        await ws.send(json.dumps({
+                                            "type": "transcription_result",
+                                            "text": transcribed,
+                                            "timestamp": int(time.time() * 1000)
+                                        }))
+                                        await self.inject_user_message(transcribed)
+                                    else:
+                                        await ws.send(json.dumps({
+                                            "type": "transcription_result",
+                                            "text": "⚠️ Audio non compreso o troppo breve. Riprova.",
+                                            "timestamp": int(time.time() * 1000)
+                                        }))
                         except Exception as e:
                             print(f"[Relay] Errore gestione messaggio in arrivo: {e}")
-
             except (websockets.ConnectionClosed, ConnectionRefusedError, OSError) as err:
                 print(f"[Relay] Connessione persa ({err}), riconnessione tra 3 secondi...")
                 self.ws = None

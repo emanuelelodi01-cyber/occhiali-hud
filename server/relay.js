@@ -72,16 +72,16 @@ wss.on('connection', (ws, req) => {
       
       if (clientType === 'pc') {
         // Message or status from PC Antigravity agent -> broadcast to HUDs
-        if (data.type === 'agent_response' || data.type === 'agent_status') {
-          lastAgentMessage = data;
+        if (data.type === 'agent_response' || data.type === 'agent_status' || data.type === 'transcription_result') {
+          if (data.type !== 'transcription_result') lastAgentMessage = data;
           broadcastToHuds(data);
         } else if (data.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
         }
       } else {
-        // Message from HUD (user spoke or typed) -> forward to PC
-        if (data.type === 'user_message') {
-          console.log(`[Relay] Relaying user prompt to PC: "${data.text}"`);
+        // Message from HUD (user spoke or typed or audio recorded) -> forward to PC
+        if (data.type === 'user_message' || data.type === 'user_audio') {
+          console.log(`[Relay] Relaying user prompt (${data.type}) to PC`);
           broadcastToPcs(data);
         } else if (data.type === 'ping') {
           ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
