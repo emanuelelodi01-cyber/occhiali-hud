@@ -1106,7 +1106,7 @@ window.RayNeoHUD = {
           this.toggleListening();
         };
 
-        ['play', 'pause', 'nexttrack', 'previoustrack'].forEach((action) => {
+        ['nexttrack', 'previoustrack'].forEach((action) => {
           try {
             navigator.mediaSession.setActionHandler(action, handlePtt);
           } catch (e) {}
@@ -1118,7 +1118,7 @@ window.RayNeoHUD = {
 
     initHardwareKeyListeners() {
       window.addEventListener('keydown', (e) => {
-        const triggerKeys = ['MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious', 'AudioVolumeMute', 'F12', 'F9', 'F8'];
+        const triggerKeys = ['MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious', 'F12', 'F9', 'F8'];
         if (triggerKeys.includes(e.code) || triggerKeys.includes(e.key)) {
           e.preventDefault();
           console.log('[Comms] Hardware key pressed:', e.code || e.key);
@@ -1312,104 +1312,129 @@ window.RayNeoHUD = {
     mediaRecorder: null,
     audioChunks: [],
     audioStream: null,
+    isListening: false,
+    _recordSessionId: 0,
+    _lastToggleTime: 0,
 
     startRecording() {
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          this.lastUserMessage = '⚠️ Registrazione audio non supportata.';
-          this.notify();
-          return false;
-        }
+      if (this.isListening) return false;
+      this.isListening = true;
+      const currentSession = ++this._recordSessionId;
 
-        // Detect supported audio mimeType on iOS Safari
-        let mimeType = '';
-        if (typeof MediaRecorder !== 'undefined') {
-          if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-          else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
-          else if (MediaRecorder.isTypeSupported('audio/aac')) mimeType = 'audio/aac';
-        }
+      this.stopSpeaking();
+      this.lastUserMessage = '🎙️ In ascolto... Parla ora! (Tocca per inviare)';
+      this.notify();
 
-        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-          this.audioStream = stream;
-          this.audioChunks = [];
-          
-          try {
-            this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-          } catch (e) {
-            this.mediaRecorder = new MediaRecorder(stream);
-          }
-
-          this.mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) {
-              this.audioChunks.push(e.data);
-            }
-          };
-
-          this.mediaRecorder.onstop = () => {
-            if (this.audioStream) {
-              this.audioStream.getTracks().forEach(t => t.stop());
-              this.audioStream = null;
-            }
-
-            const finalMime = (this.mediaRecorder && this.mediaRecorder.mimeType) || mimeType || 'audio/mp4';
-            const blob = new Blob(this.audioChunks, { type: finalMime });
-            this.audioChunks = [];
-
-            if (blob.size < 400) {
-              this.lastUserMessage = '⚠️ Audio troppo breve. Riprova.';
-              this.notify();
-              return;
-            }
-
-            this.lastUserMessage = '⏳ Trascrizione vocale in corso...';
-            this.notify();
-
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64Data = (reader.result || '').split(',')[1];
-              if (base64Data && this.ws && this.ws.readyState === WebSocket.OPEN) {
-                console.log('[Comms] Invio blob vocale (' + blob.size + ' bytes) a PC...');
-                this.ws.send(JSON.stringify({
-                  type: 'user_audio',
-                  audio: base64Data,
-                  mimeType: finalMime,
-                  timestamp: Date.now()
-                }));
-              }
-            };
-            reader.readAsDataURL(blob);
-          };
-
-          this.mediaRecorder.start(200);
-          this.isListening = true;
-          this.lastUserMessage = '🎙️ In ascolto... Parla ora! (Tocca per inviare)';
-          this.notify();
-        }).catch((err) => {
-          console.warn('[Comms] Errore microfono getUserMedia:', err);
-          this.isListening = false;
-          this.lastUserMessage = '⚠️ Errore microfono: ' + (err.name || err.message || err);
-          this.notify();
-        });
-
-        return true;
-      } catch (err) {
-        console.warn('[Comms] Eccezione microfono:', err);
-        this.lastUserMessage = '⚠️ Errore microfono: ' + (err.message || err);
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         this.isListening = false;
+        this.lastUserMessage = '⚠️ Registrazione audio non supportata.';
         this.notify();
         return false;
       }
+
+      // Detect supported audio mimeType on iOS Safari
+      let mimeType = '';
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+        else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+        else if (MediaRecorder.isTypeSupported('audio/aac')) mimeType = 'audio/aac';
+      }
+
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        // If the user cancelled or stopped while getUserMedia was resolving
+        if (this._recordSessionId !== currentSession || !this.isListening) {
+          console.log('[Comms] getUserMedia terminato ma la registrazione era già stata chiusa.');
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        this.audioStream = stream;
+        this.audioChunks = [];
+        
+        try {
+          this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        } catch (e) {
+          this.mediaRecorder = new MediaRecorder(stream);
+        }
+
+        this.mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            this.audioChunks.push(e.data);
+          }
+        };
+
+        this.mediaRecorder.onstop = () => {
+          if (this.audioStream) {
+            this.audioStream.getTracks().forEach(t => t.stop());
+            this.audioStream = null;
+          }
+
+          const finalMime = (this.mediaRecorder && this.mediaRecorder.mimeType) || mimeType || 'audio/mp4';
+          const blob = new Blob(this.audioChunks, { type: finalMime });
+          this.audioChunks = [];
+
+          if (blob.size < 400) {
+            this.lastUserMessage = '⚠️ Audio troppo breve o vuoto.';
+            this.notify();
+            return;
+          }
+
+          this.lastUserMessage = '⏳ Trascrizione vocale in corso...';
+          this.notify();
+
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64Data = (reader.result || '').split(',')[1];
+            if (base64Data && this.ws && this.ws.readyState === WebSocket.OPEN) {
+              console.log('[Comms] Invio blob vocale (' + blob.size + ' bytes) a PC...');
+              this.ws.send(JSON.stringify({
+                type: 'user_audio',
+                audio: base64Data,
+                mimeType: finalMime,
+                timestamp: Date.now()
+              }));
+            }
+          };
+          reader.readAsDataURL(blob);
+        };
+
+        this.mediaRecorder.start(200);
+        this.notify();
+      }).catch((err) => {
+        console.warn('[Comms] Errore microfono getUserMedia:', err);
+        if (this._recordSessionId === currentSession) {
+          this.isListening = false;
+          this.lastUserMessage = '⚠️ Errore microfono: ' + (err.name || err.message || err);
+          this.notify();
+        }
+      });
+
+      return true;
     },
 
     stopRecording() {
+      if (!this.isListening) return false;
+      this._recordSessionId++; // Invalidate active session immediately
+      this.isListening = false;
+
       if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
         try { this.mediaRecorder.stop(); } catch (e) {}
+      } else if (this.audioStream) {
+        try { this.audioStream.getTracks().forEach(t => t.stop()); } catch(e){}
+        this.audioStream = null;
       }
-      this.isListening = false;
       this.notify();
+      return true;
     },
 
     toggleListening() {
+      const now = Date.now();
+      if (now - this._lastToggleTime < 350) {
+        console.log('[Comms] Debouncing toggleListening');
+        return this.isListening;
+      }
+      this._lastToggleTime = now;
+
       // Haptic feedback
       try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
 
@@ -1560,20 +1585,20 @@ if (typeof document !== 'undefined') {
   document.addEventListener('touchstart', unlockAudioEngine, { passive: true, once: true });
   document.addEventListener('click', unlockAudioEngine, { passive: true, once: true });
 
-  // 3D Touch / Haptic Touch Hold-to-Talk for #hud-center-sight
-  let pressTimer = null;
-  let isHoldActive = false;
+  // 3D Touch / Haptic Touch Hold-to-Talk & Tap-to-Talk for HUD Sight and Companion Controller
+  const bindPttElement = (btn) => {
+    if (!btn || btn._pttBound) return;
+    btn._pttBound = true;
 
-  const bindCenterSight = () => {
-    const btn = document.getElementById('hud-center-sight');
-    if (!btn || btn._hapticTouchBound) return;
-    btn._hapticTouchBound = true;
+    let pressTimer = null;
+    let isHoldActive = false;
+    let suppressClick = false;
 
     btn.addEventListener('pointerdown', (e) => {
       unlockAudioEngine();
       isHoldActive = false;
 
-      // 260ms threshold for 3D/Haptic Touch hold
+      // 250ms threshold for 3D/Haptic Touch hold
       pressTimer = setTimeout(() => {
         const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
         if (comms && !comms.isListening) {
@@ -1582,7 +1607,7 @@ if (typeof document !== 'undefined') {
           comms.startRecording();
           try { if (navigator.vibrate) navigator.vibrate(45); } catch(err){}
         }
-      }, 260);
+      }, 250);
     });
 
     const handlePointerRelease = (e) => {
@@ -1595,6 +1620,10 @@ if (typeof document !== 'undefined') {
 
       if (isHoldActive) {
         isHoldActive = false;
+        suppressClick = true;
+        // Suppress any follow-up click event generated by the browser
+        setTimeout(() => { suppressClick = false; }, 400);
+
         if (comms.isListening) {
           comms.stopRecording();
           try { if (navigator.vibrate) navigator.vibrate(25); } catch(err){}
@@ -1604,11 +1633,25 @@ if (typeof document !== 'undefined') {
 
     btn.addEventListener('pointerup', handlePointerRelease);
     btn.addEventListener('pointercancel', handlePointerRelease);
+
+    // Capture phase: completely intercept and swallow the synthesized click if hold was active
+    btn.addEventListener('click', (e) => {
+      if (suppressClick) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        suppressClick = false;
+      }
+    }, true);
+  };
+
+  const bindPttButtons = () => {
+    bindPttElement(document.getElementById('hud-center-sight'));
+    bindPttElement(document.getElementById('controller-ptt-btn'));
   };
 
   const observer = new MutationObserver(() => {
-    bindCenterSight();
+    bindPttButtons();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  setTimeout(bindCenterSight, 500);
+  setTimeout(bindPttButtons, 500);
 }

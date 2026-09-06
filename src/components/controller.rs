@@ -84,6 +84,7 @@ pub fn PhoneController(
             div {
                 style: "margin-bottom: 18px;",
                 button {
+                    id: "controller-ptt-btn",
                     onclick: move |_| {
                         commsToggleListening();
                     },
