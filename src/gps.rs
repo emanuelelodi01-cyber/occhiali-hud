@@ -115,6 +115,12 @@ extern "C" {
     pub fn commsGetClientRole() -> String;
 
     #[wasm_bindgen]
+    pub fn commsStartProjector() -> bool;
+
+    #[wasm_bindgen]
+    pub fn commsStopProjector();
+
+    #[wasm_bindgen]
     pub fn commsGetStateJson() -> String;
 }
 

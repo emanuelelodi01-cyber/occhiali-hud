@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
 use crate::gps::{
     commsSendHudCommand, commsSendMessage, commsSetClientRole,
-    commsToggleListening, commsToggleTts, CommsState, HudTheme,
+    commsStartProjector, commsStopProjector, commsToggleListening, commsToggleTts,
+    CommsState, HudTheme,
 };
 
 #[component]
@@ -13,6 +14,7 @@ pub fn PhoneController(
     let comms = state();
     let th = theme();
     let mut text_input = use_signal(String::new);
+    let mut is_projecting = use_signal(|| false);
 
     // Status pill
     let (status_text, status_color) = if !comms.connected {
@@ -36,7 +38,7 @@ pub fn PhoneController(
 
             // Header Bar with Telemetry & Switcher
             div {
-                style: "display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 255, 136, 0.2); margin-bottom: 16px;",
+                style: "display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(0, 255, 136, 0.2); margin-bottom: 14px;",
                 div {
                     style: "display: flex; flex-direction: column; gap: 3px;",
                     div {
@@ -60,6 +62,43 @@ pub fn PhoneController(
                     },
                     style: "background: rgba(0, 255, 136, 0.15); border: 1.5px solid {th.primary}; border-radius: 8px; padding: 8px 12px; color: {th.primary}; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 0 12px rgba(0, 255, 136, 0.2); display: flex; align-items: center; gap: 6px;",
                     "🕶️ APRI HUD"
+                }
+            }
+
+            // Native External Screen Video Projector (YouTube Mode)
+            div {
+                style: "margin-bottom: 14px; background: linear-gradient(135deg, rgba(0, 229, 255, 0.12) 0%, rgba(0, 80, 160, 0.22) 100%); border: 1.5px solid #00e5ff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 0 18px rgba(0, 229, 255, 0.2);",
+                div {
+                    style: "display: flex; justify-content: space-between; align-items: center;",
+                    div {
+                        style: "display: flex; flex-direction: column; gap: 2px;",
+                        span {
+                            style: "font-family: 'Orbitron', monospace; font-size: 12px; font-weight: 900; letter-spacing: 0.5px; color: #00e5ff;",
+                            "📺 PROIEZIONE OCCHIALI (YOUTUBE)"
+                        }
+                        span {
+                            style: "font-size: 11px; color: rgba(255, 255, 255, 0.7); font-weight: 600;",
+                            "Proietta l'HUD sulle lenti e tieni il controller qui"
+                        }
+                    }
+                    button {
+                        onclick: move |_| {
+                            let curr = is_projecting();
+                            if !curr {
+                                commsStartProjector();
+                                is_projecting.set(true);
+                            } else {
+                                commsStopProjector();
+                                is_projecting.set(false);
+                            }
+                        },
+                        style: if is_projecting() {
+                            "background: #ff1a40; border: none; border-radius: 8px; padding: 8px 14px; color: #ffffff; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 0 15px #ff1a40;"
+                        } else {
+                            "background: #00e5ff; border: none; border-radius: 8px; padding: 8px 14px; color: #000000; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 900; cursor: pointer; box-shadow: 0 0 15px #00e5ff;"
+                        },
+                        if is_projecting() { "⏹️ FERMA" } else { "▶️ PROIETTA" }
+                    }
                 }
             }
 

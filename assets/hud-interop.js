@@ -680,6 +680,264 @@ window.RayNeoHUD = {
     }
   },
 
+  // --- External Display Video Projector Engine (YouTube Style) ---
+  projector: {
+    isActive: false,
+    videoEl: null,
+    canvasEl: null,
+    stream: null,
+    animFrame: null,
+
+    init() {
+      if (typeof document === 'undefined') return;
+      if (!this.canvasEl) {
+        this.canvasEl = document.createElement('canvas');
+        this.canvasEl.id = 'hud-projector-canvas';
+        this.canvasEl.width = 1920;
+        this.canvasEl.height = 1080;
+        this.canvasEl.style.display = 'none';
+        document.body.appendChild(this.canvasEl);
+      }
+      if (!this.videoEl) {
+        this.videoEl = document.createElement('video');
+        this.videoEl.id = 'hud-projector-video';
+        this.videoEl.setAttribute('playsinline', 'false');
+        this.videoEl.setAttribute('x-webkit-airplay', 'allow');
+        this.videoEl.setAttribute('disableRemotePlayback', 'false');
+        this.videoEl.autoplay = true;
+        this.videoEl.muted = true;
+        this.videoEl.controls = true;
+        this.videoEl.style.position = 'fixed';
+        this.videoEl.style.bottom = '8px';
+        this.videoEl.style.right = '8px';
+        this.videoEl.style.width = '120px';
+        this.videoEl.style.height = '68px';
+        this.videoEl.style.borderRadius = '8px';
+        this.videoEl.style.border = '1.5px solid #00ff88';
+        this.videoEl.style.zIndex = '9999';
+        this.videoEl.style.background = '#000000';
+        this.videoEl.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.4)';
+        document.body.appendChild(this.videoEl);
+      }
+    },
+
+    renderFrame() {
+      if (!this.isActive || !this.canvasEl) return;
+      const ctx = this.canvasEl.getContext('2d');
+      const w = 1920;
+      const h = 1080;
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+
+      const state = window.RayNeoHUD.state || { heading: 0, speed: 0 };
+      const comms = window.RayNeoHUD.comms;
+
+      this.drawCompass(ctx, w, state.heading);
+      this.drawTelemetry(ctx, w);
+      this.drawSubtitles(ctx, w, comms);
+      this.drawMinimap(ctx, h);
+      this.drawSpeedometer(ctx, w, h, state.speed);
+
+      this.animFrame = requestAnimationFrame(() => this.renderFrame());
+    },
+
+    drawCompass(ctx, w, heading) {
+      const cx = w / 2;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.strokeStyle = 'rgba(0, 255, 136, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(cx - 160, 20, 320, 50, 8);
+      else ctx.rect(cx - 160, 20, 320, 50);
+      ctx.fill();
+      ctx.stroke();
+
+      const deg = Math.round(heading || 0);
+      const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      const dirIdx = Math.round(deg / 45) % 8;
+      const dirStr = dirs[dirIdx];
+
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 22px "Orbitron", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${dirStr}  ${deg}°`, cx, 52);
+      ctx.restore();
+    },
+
+    drawTelemetry(ctx, w) {
+      ctx.save();
+      const now = new Date();
+      const timeStr = now.toTimeString().split(' ')[0];
+      const locStr = window.RayNeoHUD.getLocationName() || 'GPS ONLINE';
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 28px "Orbitron", monospace';
+      ctx.fillText(timeStr, w - 60, 55);
+
+      ctx.fillStyle = '#ffcc00';
+      ctx.font = 'bold 16px "Rajdhani", sans-serif';
+      ctx.fillText(locStr, w - 60, 85);
+      ctx.restore();
+    },
+
+    drawSubtitles(ctx, w, comms) {
+      const text = (comms && comms.streamedSubtitle) ? comms.streamedSubtitle : '';
+      if (!text || text === 'In attesa di collegamento con la sessione PC...') return;
+
+      const cardW = 920;
+      const cardH = 170;
+      const x = (w - cardW) / 2;
+      const y = 95;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = 'rgba(0, 255, 136, 0.4)';
+      ctx.shadowBlur = 15;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, cardW, cardH, 12);
+      else ctx.rect(x, y, cardW, cardH);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#00ff88';
+      ctx.font = 'bold 15px "Orbitron", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText('🤖 ANTIGRAVITY // AI HUD', x + 24, y + 34);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = (comms && comms.isSpeaking) ? '#00ff88' : '#00e5ff';
+      ctx.font = 'bold 13px "Rajdhani", sans-serif';
+      ctx.fillText((comms && comms.isSpeaking) ? '🔊 VOCE ATTIVA' : 'PRONTO', x + cardW - 24, y + 34);
+
+      ctx.strokeStyle = 'rgba(0, 255, 136, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x + 24, y + 46);
+      ctx.lineTo(x + cardW - 24, y + 46);
+      ctx.stroke();
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 21px "Rajdhani", sans-serif';
+      this.wrapText(ctx, text + ((comms && comms.isTyping) ? ' ▌' : ''), x + 24, y + 80, cardW - 48, 30, 3);
+      ctx.restore();
+    },
+
+    wrapText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+      const words = text.split(' ');
+      let line = '';
+      let currentY = y;
+      let lineCount = 0;
+
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+          ctx.fillText(line, x, currentY);
+          line = words[n] + ' ';
+          currentY += lineHeight;
+          lineCount++;
+          if (lineCount >= maxLines - 1) {
+            ctx.fillText(words.slice(n).join(' '), x, currentY);
+            return;
+          }
+        } else {
+          line = testLine;
+        }
+      }
+      ctx.fillText(line, x, currentY);
+    },
+
+    drawMinimap(ctx, h) {
+      const mx = 60;
+      const my = h - 310;
+      const mw = 250;
+      const mh = 250;
+      ctx.save();
+      const radarCanvas = document.getElementById('gta-radar-canvas');
+      if (radarCanvas) {
+        ctx.drawImage(radarCanvas, mx, my, mw, mh);
+      }
+      ctx.restore();
+    },
+
+    drawSpeedometer(ctx, w, h, speed) {
+      const sx = w - 260;
+      const sy = h - 150;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(sx, sy, 200, 85, 8);
+      else ctx.rect(sx, sy, 200, 85);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 38px "Orbitron", monospace';
+      ctx.fillText(Math.round(speed || 0), sx + 75, sy + 56);
+
+      ctx.fillStyle = '#00e5ff';
+      ctx.font = 'bold 15px "Orbitron", monospace';
+      ctx.fillText('KM/H', sx + 155, sy + 54);
+      ctx.restore();
+    },
+
+    async startProjecting() {
+      this.init();
+      this.isActive = true;
+      this.renderFrame();
+
+      try {
+        if (!this.stream) {
+          this.stream = this.canvasEl.captureStream(30);
+          this.videoEl.srcObject = this.stream;
+        }
+        await this.videoEl.play();
+
+        if (typeof this.videoEl.webkitShowPlaybackTargetPicker === 'function') {
+          console.log('[Projector] Triggering native WebKit Playback Target Picker...');
+          this.videoEl.webkitShowPlaybackTargetPicker();
+          return true;
+        }
+
+        if (typeof this.videoEl.webkitEnterFullscreen === 'function') {
+          console.log('[Projector] Entering WebKit Fullscreen to route to external display...');
+          this.videoEl.webkitEnterFullscreen();
+          return true;
+        }
+
+        return true;
+      } catch (err) {
+        console.warn('[Projector] Errore avvio proiezione video:', err);
+        alert('Avvio proiezione video: ' + (err.message || err));
+        return false;
+      }
+    },
+
+    stopProjecting() {
+      this.isActive = false;
+      if (this.animFrame) cancelAnimationFrame(this.animFrame);
+      if (this.videoEl) {
+        this.videoEl.pause();
+        if (this.videoEl.srcObject) {
+          const tracks = this.videoEl.srcObject.getTracks ? this.videoEl.srcObject.getTracks() : [];
+          tracks.forEach(t => t.stop());
+          this.videoEl.srcObject = null;
+        }
+      }
+      this.stream = null;
+    }
+  },
+
   // --- Antigravity Bidirectional Voice & HUD Comms Engine ---
   comms: {
     ws: null,
@@ -1231,6 +1489,18 @@ window.commsSetClientRole = function(role) {
 
 window.commsGetClientRole = function() {
   return (window.RayNeoHUD && window.RayNeoHUD.comms) ? window.RayNeoHUD.comms.clientRole : 'hud';
+};
+
+window.commsStartProjector = function() {
+  return (window.RayNeoHUD && window.RayNeoHUD.projector)
+    ? window.RayNeoHUD.projector.startProjecting()
+    : false;
+};
+
+window.commsStopProjector = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.projector) {
+    window.RayNeoHUD.projector.stopProjecting();
+  }
 };
 
 window.commsGetStateJson = function() {
