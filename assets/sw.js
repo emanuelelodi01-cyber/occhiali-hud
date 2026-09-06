@@ -1,32 +1,22 @@
-const CACHE_NAME = 'rayneo-hud-v1';
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
-  './hud.css',
-  './hud-interop.js'
-];
-
+// RayNeo HUD - Cache-busting / Self-unregistering Service Worker
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
-  );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
-    }).then(() => self.clients.claim())
+      return Promise.all(keys.map((key) => caches.delete(key)));
+    }).then(() => {
+      return self.clients.claim();
+    }).then(() => {
+      return self.registration.unregister();
+    })
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      return cachedResponse || fetch(event.request);
-    })
-  );
+  // Always fetch fresh from network, never cache index or bundles
+  event.respondWith(fetch(event.request));
 });
+

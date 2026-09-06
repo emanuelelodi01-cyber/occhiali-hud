@@ -21,7 +21,9 @@ window.RayNeoHUD = {
     heading: 45,
     speed: 0,
     zoom: 16,
-    mapMode: (typeof localStorage !== 'undefined' && localStorage.getItem('rayneo_map_mode')) || 'satellite',
+    mapMode: (() => {
+      try { return localStorage.getItem('rayneo_map_mode') || 'satellite'; } catch (e) { return 'satellite'; }
+    })(),
     theme: {}
   },
 
@@ -36,15 +38,26 @@ window.RayNeoHUD = {
   },
 
   getMapMode() {
-    return this.state.mapMode || 'satellite';
+    try {
+      return (window.RayNeoHUD && window.RayNeoHUD.state && window.RayNeoHUD.state.mapMode)
+        ? String(window.RayNeoHUD.state.mapMode)
+        : 'satellite';
+    } catch (e) {
+      return 'satellite';
+    }
   },
 
   cycleMapMode() {
-    const modes = ['satellite', 'streets', 'dark'];
-    const currentIdx = modes.indexOf(this.getMapMode());
-    const nextMode = modes[(currentIdx + 1) % modes.length];
-    this.setMapMode(nextMode);
-    return nextMode;
+    try {
+      const modes = ['satellite', 'streets', 'dark'];
+      const current = this.getMapMode();
+      const currentIdx = modes.indexOf(current);
+      const nextMode = modes[(currentIdx + 1) % modes.length];
+      this.setMapMode(nextMode);
+      return nextMode;
+    } catch (e) {
+      return 'satellite';
+    }
   },
 
   // AR Camera Passthrough: stream real-world back camera behind HUD
