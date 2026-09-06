@@ -1631,82 +1631,132 @@ if (typeof document !== 'undefined') {
   document.addEventListener('touchstart', unlockAudioEngine, { passive: true, once: true });
   document.addEventListener('click', unlockAudioEngine, { passive: true, once: true });
 
-  // True 3D Touch / Force Touch Detector for iOS and Mac Force Touch
+  // Native iOS Taptic Engine Trigger via WebKit Switch + Cross-Platform Vibration
+  const triggerTapticEngine = (pattern = 'medium') => {
+    try {
+      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIos) {
+        // Taptic Engine hardware trigger via iOS Safari/WebKit switch component
+        const switchEl = document.createElement('input');
+        switchEl.type = 'checkbox';
+        switchEl.setAttribute('switch', '');
+        switchEl.style.position = 'fixed';
+        switchEl.style.top = '-9999px';
+        switchEl.style.left = '-9999px';
+        switchEl.style.opacity = '0';
+        switchEl.style.pointerEvents = 'none';
+        document.body.appendChild(switchEl);
+        switchEl.click();
+        if (pattern === 'heavy') {
+          setTimeout(() => { try { switchEl.click(); } catch(e){} }, 90);
+        }
+        setTimeout(() => {
+          try { switchEl.remove(); } catch(e){}
+        }, 180);
+      } else if (navigator.vibrate) {
+        navigator.vibrate(pattern === 'heavy' ? [50, 40, 50] : 35);
+      }
+    } catch(e) {}
+  };
+
+  // 3D Touch & Haptic Touch Hold-To-Talk
   const bindPttElement = (btn) => {
     if (!btn || btn._pttBound) return;
     btn._pttBound = true;
 
-    let isForceActive = false;
+    let isEngaged = false;
     let suppressClick = false;
+    let hapticTimer = null;
 
-    const startRecordingWithFeedback = () => {
-      if (isForceActive) return;
-      isForceActive = true;
+    const startRecordingSession = () => {
+      if (isEngaged) return;
+      isEngaged = true;
       suppressClick = true;
       unlockAudioEngine();
+      btn.classList.add('is-listening');
+      btn.classList.remove('is-pressing');
+
+      // Taptic Engine Haptic Buzz on phone!
+      triggerTapticEngine('heavy');
 
       const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
       if (comms && !comms.isListening) {
         comms.stopSpeaking();
         comms.startRecording();
-        try { if (navigator.vibrate) navigator.vibrate([40, 30, 40]); } catch(e){}
       }
     };
 
-    const stopRecordingWithFeedback = () => {
-      if (!isForceActive) return;
-      isForceActive = false;
+    const stopRecordingSession = () => {
+      if (hapticTimer) {
+        clearTimeout(hapticTimer);
+        hapticTimer = null;
+      }
+      btn.classList.remove('is-pressing');
+
+      if (!isEngaged) return;
+      isEngaged = false;
+      btn.classList.remove('is-listening');
       suppressClick = true;
       setTimeout(() => { suppressClick = false; }, 400);
+
+      // Taptic Engine Release Click!
+      triggerTapticEngine('medium');
 
       const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
       if (comms && comms.isListening) {
         comms.stopRecording();
-        try { if (navigator.vibrate) navigator.vibrate(30); } catch(e){}
       }
     };
 
-    // 1. iOS Native 3D Touch (Force Touch on iPhone 6s/7/8/X/XS)
+    // User puts finger down: start Haptic Touch anticipation
+    const handlePressStart = (e) => {
+      unlockAudioEngine();
+      isEngaged = false;
+      btn.classList.add('is-pressing');
+
+      if (hapticTimer) clearTimeout(hapticTimer);
+
+      // 380ms deliberate Haptic Touch threshold (requires firm, intentional hold)
+      hapticTimer = setTimeout(() => {
+        startRecordingSession();
+      }, 380);
+    };
+
+    btn.addEventListener('pointerdown', handlePressStart);
+
+    // If device supports real physical 3D Touch (iPhone 6s to XS)
     btn.addEventListener('touchforcechange', (e) => {
       const touch = e.touches && e.touches[0];
       if (!touch) return;
       const force = touch.force !== undefined ? touch.force : 0;
-
-      // Real 3D Touch deep press threshold (0.45 out of 1.0)
-      if (force >= 0.45) {
-        startRecordingWithFeedback();
-      } else if (force < 0.20 && isForceActive) {
-        stopRecordingWithFeedback();
+      if (force >= 0.40) {
+        if (hapticTimer) clearTimeout(hapticTimer);
+        startRecordingSession();
+      } else if (force < 0.15 && isEngaged) {
+        stopRecordingSession();
       }
     }, { passive: true });
 
-    // 2. Mac Force Touch Trackpad (WebKit deep press)
+    // Mac Force Touch Trackpad (WebKit deep press)
     btn.addEventListener('webkitmouseforcechanged', (e) => {
       if (e.webkitForce >= 2) {
-        startRecordingWithFeedback();
-      } else if (e.webkitForce < 1.4 && isForceActive) {
-        stopRecordingWithFeedback();
+        if (hapticTimer) clearTimeout(hapticTimer);
+        startRecordingSession();
+      } else if (e.webkitForce < 1.4 && isEngaged) {
+        stopRecordingSession();
       }
     });
 
-    // 3. PointerEvent Pressure (Styli & Pressure-sensitive screens)
-    btn.addEventListener('pointermove', (e) => {
-      if (e.pressure && e.pressure >= 0.5) {
-        startRecordingWithFeedback();
-      } else if (e.pressure && e.pressure < 0.2 && isForceActive) {
-        stopRecordingWithFeedback();
-      }
-    });
+    // Pointer cancel or release
+    btn.addEventListener('pointerup', stopRecordingSession);
+    btn.addEventListener('pointercancel', stopRecordingSession);
+    btn.addEventListener('touchend', stopRecordingSession);
+    btn.addEventListener('touchcancel', stopRecordingSession);
 
-    // On release of touch or pointer
-    btn.addEventListener('touchend', stopRecordingWithFeedback);
-    btn.addEventListener('touchcancel', stopRecordingWithFeedback);
-    btn.addEventListener('pointerup', stopRecordingWithFeedback);
-    btn.addEventListener('pointercancel', stopRecordingWithFeedback);
-
-    // Capture phase: swallow click if triggered by 3D Touch release
+    // Click handler:
+    // Swallow synthesized click after Haptic Touch
     btn.addEventListener('click', (e) => {
-      if (suppressClick || isForceActive) {
+      if (suppressClick || isEngaged) {
         e.stopImmediatePropagation();
         e.preventDefault();
         suppressClick = false;
