@@ -19,14 +19,23 @@ COPY src/ ./src/
 
 RUN dx build --platform web --release
 
-# Stage 2: Nginx Web Server (<20MB)
+# Stage 2: Nginx Web Server + Node.js WebSocket Relay
 FROM nginx:alpine
+
+RUN apk add --no-cache nodejs npm
+
+WORKDIR /app/server
+COPY server/package.json ./
+RUN npm install --production
+
+COPY server/ ./
+RUN chmod +x entrypoint.sh
 
 COPY --from=builder /app/target/dx/occhiali-hud/release/web/public /usr/share/nginx/html
 COPY assets/ /usr/share/nginx/html/
 COPY assets/ /usr/share/nginx/html/assets/
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+EXPOSE 80 3001
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/app/server/entrypoint.sh"]

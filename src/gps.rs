@@ -89,6 +89,61 @@ extern "C" {
         speed: f64,
         theme: &JsValue,
     );
+
+    #[wasm_bindgen]
+    pub fn commsInit();
+
+    #[wasm_bindgen]
+    pub fn commsToggleListening() -> bool;
+
+    #[wasm_bindgen]
+    pub fn commsToggleTts() -> bool;
+
+    #[wasm_bindgen]
+    pub fn commsSendMessage(text: &str);
+
+    #[wasm_bindgen]
+    pub fn commsStopSpeaking();
+
+    #[wasm_bindgen]
+    pub fn commsGetStateJson() -> String;
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CommsState {
+    pub connected: bool,
+    #[serde(rename = "pcOnline")]
+    pub pc_online: bool,
+    #[serde(rename = "ttsEnabled")]
+    pub tts_enabled: bool,
+    #[serde(rename = "isListening")]
+    pub is_listening: bool,
+    #[serde(rename = "isSpeaking")]
+    pub is_speaking: bool,
+    #[serde(rename = "agentStatus")]
+    pub agent_status: String,
+    #[serde(rename = "toolDetail")]
+    pub tool_detail: String,
+    #[serde(rename = "lastAgentMessage")]
+    pub last_agent_message: String,
+    #[serde(rename = "lastUserMessage")]
+    pub last_user_message: String,
+}
+
+impl Default for CommsState {
+    fn default() -> Self {
+        Self {
+            connected: false,
+            pc_online: false,
+            tts_enabled: true,
+            is_listening: false,
+            is_speaking: false,
+            agent_status: "idle".to_string(),
+            tool_detail: String::new(),
+            last_agent_message: "In attesa di collegamento con la sessione PC...".to_string(),
+            last_user_message: String::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

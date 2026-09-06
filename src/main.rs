@@ -3,6 +3,7 @@
 mod components;
 mod gps;
 
+use components::comms::CommsWidget;
 use components::compass::Compass;
 use components::header::Header;
 use components::radar::Radar;
@@ -10,8 +11,9 @@ use components::settings::SettingsModal;
 use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
 use gps::{
-    getBatteryLevel, getHeading, getLocationName, isBatteryCharging, isCameraRunning,
-    toggleCamera, toggleFullscreen, triggerGpsFix, GpsData, HudTheme,
+    commsGetStateJson, commsInit, getBatteryLevel, getHeading, getLocationName,
+    isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
+    CommsState, GpsData, HudTheme,
 };
 
 use dioxus::prelude::*;
@@ -32,14 +34,31 @@ fn App() -> Element {
     let mut show_settings = use_signal(|| false);
     let mut clock_str = use_signal(|| "00:00:00".to_string());
     let mut camera_active = use_signal(|| false);
+    let mut comms_state = use_signal(CommsState::default);
+    let comms_expanded = use_signal(|| false);
 
     // Clock update & GPS/Heading polling loop using use_hook to run ONCE on mount
     use_hook(move || {
         wasm_bindgen_futures::spawn_local(async move {
+            // Ensure comms WebSocket is initialized
+            commsInit();
+
             let mut tick_counter: u64 = 0;
             loop {
                 gloo_timers::future::TimeoutFuture::new(100).await;
                 tick_counter += 1;
+
+                // Sync Comms state from JavaScript interop every 300ms
+                if tick_counter % 3 == 0 {
+                    let json_str = commsGetStateJson();
+                    if !json_str.is_empty() && json_str != "{}" {
+                        if let Ok(new_comms) = serde_json::from_str::<CommsState>(&json_str) {
+                            if new_comms != comms_state.peek().clone() {
+                                comms_state.set(new_comms);
+                            }
+                        }
+                    }
+                }
 
                 // Update clock once every second
                 if tick_counter % 10 == 0 {
@@ -253,6 +272,13 @@ fn App() -> Element {
                     latitude: cur_gps.latitude,
                     longitude: cur_gps.longitude,
                 }
+            }
+
+            // Antigravity Voice & Hologram Comms Widget
+            CommsWidget {
+                state: comms_state,
+                theme: theme,
+                is_expanded: comms_expanded,
             }
 
             // Settings Modal

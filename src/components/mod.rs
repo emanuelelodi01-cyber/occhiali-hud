@@ -1,3 +1,4 @@
+pub mod comms;
 pub mod compass;
 pub mod header;
 pub mod radar;

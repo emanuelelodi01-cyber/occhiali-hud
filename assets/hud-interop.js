@@ -678,6 +678,296 @@ window.RayNeoHUD = {
     } else {
       alert('Service Worker non supportato dal browser.');
     }
+  },
+
+  // --- Antigravity Bidirectional Voice & HUD Comms Engine ---
+  comms: {
+    ws: null,
+    wsUrl: null,
+    connected: false,
+    pcOnline: false,
+    ttsEnabled: true,
+    isListening: false,
+    isSpeaking: false,
+    recognition: null,
+    agentStatus: 'idle', // 'idle', 'thinking', 'tool_running', 'speaking'
+    toolDetail: '',
+    lastAgentMessage: 'In attesa di collegamento con la sessione PC...',
+    lastUserMessage: '',
+    listeners: new Set(),
+
+    init() {
+      if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      this.wsUrl = `${protocol}//${host}/api/ws?client=hud`;
+      this.connect();
+      this.initSpeechRecognition();
+    },
+
+    connect() {
+      try {
+        console.log('[Comms] Connessione a', this.wsUrl);
+        this.ws = new WebSocket(this.wsUrl);
+
+        this.ws.onopen = () => {
+          this.connected = true;
+          console.log('[Comms] WebSocket connesso');
+          this.notify();
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            this.handleMessage(data);
+          } catch (e) {
+            console.warn('[Comms] Errore parse messaggio:', e);
+          }
+        };
+
+        this.ws.onclose = () => {
+          this.connected = false;
+          this.pcOnline = false;
+          this.ws = null;
+          this.notify();
+          // Auto reconnect after 3s
+          setTimeout(() => this.connect(), 3000);
+        };
+
+        this.ws.onerror = (err) => {
+          console.warn('[Comms] WebSocket errore:', err);
+        };
+      } catch (e) {
+        console.warn('[Comms] Impossibile aprire WebSocket:', e);
+        setTimeout(() => this.connect(), 4000);
+      }
+    },
+
+    handleMessage(data) {
+      if (data.type === 'system') {
+        if (data.event === 'welcome') {
+          this.pcOnline = !!data.pcOnline;
+          if (data.lastMessage && data.lastMessage.content) {
+            this.lastAgentMessage = data.lastMessage.content;
+          }
+        } else if (data.event === 'pc_status') {
+          this.pcOnline = !!data.online;
+        }
+      } else if (data.type === 'agent_status') {
+        this.agentStatus = data.status || 'idle';
+        this.toolDetail = data.toolName ? `Tool: ${data.toolName}` : '';
+      } else if (data.type === 'agent_response') {
+        this.agentStatus = 'idle';
+        this.toolDetail = '';
+        if (data.content) {
+          this.lastAgentMessage = data.content;
+          if (this.ttsEnabled) {
+            this.speak(data.content);
+          }
+        }
+      }
+      this.notify();
+    },
+
+    sendMessage(text) {
+      const clean = (text || '').trim();
+      if (!clean) return;
+      this.lastUserMessage = clean;
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({
+          type: 'user_message',
+          text: clean,
+          timestamp: Date.now()
+        }));
+      } else {
+        console.warn('[Comms] WebSocket non connesso, messaggio in coda o non inviato');
+      }
+      this.notify();
+    },
+
+    speak(text) {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel(); // Stop any previous speech
+      
+      // Clean markdown tags, URLs, backticks for pleasant voice readout
+      const clean = text
+        .replace(/```[\s\S]*?```/g, 'Blocco di codice.')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/https?:\/\/\S+/g, 'collegamento web')
+        .replace(/[*#_~\[\]]/g, '')
+        .trim();
+
+      if (!clean) return;
+
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.lang = 'it-IT';
+      utterance.rate = 1.05; // Slightly faster, natural pacing
+      utterance.pitch = 1.0;
+
+      // Select natural Italian voice if available
+      const voices = window.speechSynthesis.getVoices();
+      const itVoice = voices.find(v => v.lang.startsWith('it') && (v.name.includes('Natural') || v.name.includes('Siri') || v.name.includes('Google') || v.name.includes('Alice')));
+      if (itVoice) utterance.voice = itVoice;
+
+      utterance.onstart = () => {
+        this.isSpeaking = true;
+        this.notify();
+      };
+      utterance.onend = utterance.onerror = () => {
+        this.isSpeaking = false;
+        this.notify();
+      };
+
+      window.speechSynthesis.speak(utterance);
+    },
+
+    stopSpeaking() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+      this.isSpeaking = false;
+      this.notify();
+    },
+
+    initSpeechRecognition() {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        console.warn('[Comms] SpeechRecognition non supportata su questo browser');
+        return;
+      }
+      const rec = new SpeechRec();
+      rec.lang = 'it-IT';
+      rec.continuous = false;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+
+      rec.onstart = () => {
+        this.isListening = true;
+        this.notify();
+      };
+
+      rec.onresult = (event) => {
+        let interim = '';
+        let final = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        if (final) {
+          this.lastUserMessage = final;
+          this.sendMessage(final);
+        } else if (interim) {
+          this.lastUserMessage = interim;
+        }
+        this.notify();
+      };
+
+      rec.onerror = (err) => {
+        console.warn('[Comms] Errore riconoscimento vocale:', err);
+        this.isListening = false;
+        this.notify();
+      };
+
+      rec.onend = () => {
+        this.isListening = false;
+        this.notify();
+      };
+
+      this.recognition = rec;
+    },
+
+    toggleListening() {
+      if (!this.recognition) {
+        this.initSpeechRecognition();
+        if (!this.recognition) {
+          alert('Riconoscimento vocale non supportato su questo browser. Usa i pulsanti rapidi.');
+          return false;
+        }
+      }
+
+      if (this.isListening) {
+        try { this.recognition.stop(); } catch (e) {}
+        this.isListening = false;
+      } else {
+        // If speaking, stop speaking so mic does not hear itself
+        this.stopSpeaking();
+        try {
+          this.recognition.start();
+          this.isListening = true;
+        } catch (e) {
+          console.warn('[Comms] Impossibile avviare microfono:', e);
+        }
+      }
+      this.notify();
+      return this.isListening;
+    },
+
+    toggleTts() {
+      this.ttsEnabled = !this.ttsEnabled;
+      if (!this.ttsEnabled) this.stopSpeaking();
+      this.notify();
+      return this.ttsEnabled;
+    },
+
+    notify() {
+      for (const cb of this.listeners) {
+        try { cb(this.getState()); } catch (e) {}
+      }
+    },
+
+    getState() {
+      return {
+        connected: this.connected,
+        pcOnline: this.pcOnline,
+        ttsEnabled: this.ttsEnabled,
+        isListening: this.isListening,
+        isSpeaking: this.isSpeaking,
+        agentStatus: this.agentStatus,
+        toolDetail: this.toolDetail,
+        lastAgentMessage: this.lastAgentMessage,
+        lastUserMessage: this.lastUserMessage
+      };
+    }
+  }
+};
+
+// Global interop helpers for Rust / Dioxus
+window.commsInit = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    window.RayNeoHUD.comms.init();
+  }
+};
+
+window.commsToggleListening = function() {
+  return (window.RayNeoHUD && window.RayNeoHUD.comms) ? window.RayNeoHUD.comms.toggleListening() : false;
+};
+
+window.commsToggleTts = function() {
+  return (window.RayNeoHUD && window.RayNeoHUD.comms) ? window.RayNeoHUD.comms.toggleTts() : false;
+};
+
+window.commsSendMessage = function(text) {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    window.RayNeoHUD.comms.sendMessage(text);
+  }
+};
+
+window.commsStopSpeaking = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    window.RayNeoHUD.comms.stopSpeaking();
+  }
+};
+
+window.commsGetStateJson = function() {
+  try {
+    return (window.RayNeoHUD && window.RayNeoHUD.comms)
+      ? JSON.stringify(window.RayNeoHUD.comms.getState())
+      : '{}';
+  } catch (e) {
+    return '{}';
   }
 };
 
@@ -688,6 +978,7 @@ if (typeof document !== 'undefined') {
     window.RayNeoHUD.initBattery();
     window.RayNeoHUD.initOrientationListener();
     window.RayNeoHUD.initPwaUpdateWatcher();
+    if (window.RayNeoHUD.comms) window.RayNeoHUD.comms.init();
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initHUD);
