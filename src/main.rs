@@ -13,7 +13,7 @@ use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
 use components::subtitles::AiSubtitles;
 use gps::{
-    commsGetStateJson, commsInit, commsSetClientRole, commsToggleListening, getBatteryLevel, getHeading, getLocationName,
+    commsGetStateJson, commsInit, commsSetClientRole, getBatteryLevel, getHeading, getLocationName,
     isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
     CommsState, GpsData, HudTheme,
 };
@@ -295,11 +295,17 @@ fn App() -> Element {
 
                 // Center Area: Open sightline for RayNeo Micro-OLED AR transparency & Blind-Touch PTT
                 div {
-                    class: "hud-center-sight",
-                    onclick: move |_| {
-                        commsToggleListening();
-                    },
+                    id: "hud-center-sight",
+                    class: if comms_state().is_listening { "hud-center-sight is-listening" } else { "hud-center-sight" },
                     div { class: "hud-crosshair" }
+                    div {
+                        class: "hud-sight-label",
+                        if comms_state().is_listening {
+                            "🔴 IN ASCOLTO... RILASCIA O TOCCA PER INVIARE"
+                        } else {
+                            "🎙️ TIENI PREMUTO PER PARLARE"
+                        }
+                    }
                 }
 
                 // Bottom Bar: Minimap Radar (Left) + Speedometer (Right)

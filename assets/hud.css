@@ -745,33 +745,78 @@ html, body {
 .hud-center-sight {
   flex: 1;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   cursor: pointer;
-  z-index: 5;
-  touch-action: manipulation;
+  z-index: 50;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
+  width: 100%;
+  max-width: 650px;
+  margin: 0 auto;
+  gap: 12px;
 }
 
 .hud-crosshair {
-  width: 20px;
-  height: 20px;
-  border: 1px solid rgba(0, 229, 255, 0.3);
+  width: 44px;
+  height: 44px;
+  border: 1.5px solid rgba(0, 229, 255, 0.4);
   border-radius: 50%;
   pointer-events: none;
   position: relative;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .hud-crosshair::after {
   content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 4px;
-  height: 4px;
-  background: rgba(0, 229, 255, 0.6);
+  width: 6px;
+  height: 6px;
+  background: rgba(0, 229, 255, 0.8);
   border-radius: 50%;
+  transition: background 0.2s ease;
+}
+
+.hud-center-sight.is-listening .hud-crosshair {
+  border-color: #ff2a55;
+  box-shadow: 0 0 25px rgba(255, 42, 85, 0.8), inset 0 0 15px rgba(255, 42, 85, 0.5);
+  animation: ptt-pulse 1.2s infinite ease-in-out;
+}
+
+@keyframes ptt-pulse {
+  0% { transform: scale(1.1); box-shadow: 0 0 15px rgba(255, 42, 85, 0.6); }
+  50% { transform: scale(1.25); box-shadow: 0 0 35px rgba(255, 42, 85, 0.9); }
+  100% { transform: scale(1.1); box-shadow: 0 0 15px rgba(255, 42, 85, 0.6); }
+}
+
+.hud-center-sight.is-listening .hud-crosshair::after {
+  background: #ff2a55;
+}
+
+.hud-sight-label {
+  font-family: 'Orbitron', monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: rgba(0, 229, 255, 0.7);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.hud-center-sight.is-listening .hud-sight-label {
+  color: #ffffff;
+  background: rgba(255, 42, 85, 0.8);
+  border-color: #ff5577;
+  box-shadow: 0 0 18px rgba(255, 42, 85, 0.6);
 }
 

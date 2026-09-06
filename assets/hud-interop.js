@@ -1490,6 +1490,24 @@ window.commsGetClientRole = function() {
   return (window.RayNeoHUD && window.RayNeoHUD.comms) ? window.RayNeoHUD.comms.clientRole : 'hud';
 };
 
+window.commsStartListening = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    try { if (navigator.vibrate) navigator.vibrate(40); } catch (e) {}
+    window.RayNeoHUD.comms.stopSpeaking();
+    return window.RayNeoHUD.comms.startRecording();
+  }
+  return false;
+};
+
+window.commsStopListening = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) {}
+    window.RayNeoHUD.comms.stopRecording();
+    return true;
+  }
+  return false;
+};
+
 window.commsGetStateJson = function() {
   try {
     return (window.RayNeoHUD && window.RayNeoHUD.comms)
@@ -1500,8 +1518,92 @@ window.commsGetStateJson = function() {
   }
 };
 
-// Automatically start when DOM is ready or already ready
+// Native touch & hold Push-To-Talk delegation for HUD center sight
 if (typeof document !== 'undefined') {
+  let pressStartTime = 0;
+  let wasListeningAtStart = false;
+  let activeTouch = false;
+
+  const getSightTarget = (target) => {
+    return target && target.closest ? target.closest('#hud-center-sight, .hud-center-sight') : null;
+  };
+
+  document.addEventListener('touchstart', (e) => {
+    const sight = getSightTarget(e.target);
+    if (!sight) return;
+    if (e.cancelable) e.preventDefault();
+    activeTouch = true;
+    pressStartTime = Date.now();
+    const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+    if (!comms) return;
+
+    wasListeningAtStart = comms.isListening;
+    if (!wasListeningAtStart) {
+      comms.stopSpeaking();
+      comms.startRecording();
+      try { if (navigator.vibrate) navigator.vibrate(40); } catch (err) {}
+    }
+  }, { passive: false });
+
+  const handleTouchEnd = (e) => {
+    if (!activeTouch) return;
+    activeTouch = false;
+    if (e.cancelable) e.preventDefault();
+
+    const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+    if (!comms) return;
+
+    const duration = Date.now() - pressStartTime;
+    if (wasListeningAtStart) {
+      // Was already listening when pressed -> stop now
+      comms.stopRecording();
+      try { if (navigator.vibrate) navigator.vibrate(25); } catch (err) {}
+    } else {
+      // Wasn't listening when pressed. If held > 350ms (hold-to-talk), stop on release!
+      if (duration > 350) {
+        comms.stopRecording();
+        try { if (navigator.vibrate) navigator.vibrate(25); } catch (err) {}
+      } else {
+        // Was a quick tap: leave it recording for hands-free speaking
+      }
+    }
+  };
+
+  document.addEventListener('touchend', handleTouchEnd, { passive: false });
+  document.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+  // Mouse support for desktop / laptop testing
+  let mousePressed = false;
+  document.addEventListener('mousedown', (e) => {
+    const sight = getSightTarget(e.target);
+    if (!sight) return;
+    mousePressed = true;
+    pressStartTime = Date.now();
+    const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+    if (!comms) return;
+    wasListeningAtStart = comms.isListening;
+    if (!wasListeningAtStart) {
+      comms.stopSpeaking();
+      comms.startRecording();
+      try { if (navigator.vibrate) navigator.vibrate(40); } catch (err) {}
+    }
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!mousePressed) return;
+    mousePressed = false;
+    const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+    if (!comms) return;
+    const duration = Date.now() - pressStartTime;
+    if (wasListeningAtStart) {
+      comms.stopRecording();
+      try { if (navigator.vibrate) navigator.vibrate(25); } catch (err) {}
+    } else if (duration > 350) {
+      comms.stopRecording();
+      try { if (navigator.vibrate) navigator.vibrate(25); } catch (err) {}
+    }
+  });
+
   const initHUD = () => {
     window.RayNeoHUD.startAnimationLoop('gta-radar-canvas');
     window.RayNeoHUD.initBattery();
