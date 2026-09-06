@@ -100,6 +100,16 @@ pub fn PhoneController(
                         if is_projecting() { "⏹️ FERMA" } else { "▶️ PROIETTA" }
                     }
                 }
+
+                // Live Video Stream Mount for Native iOS External Screen Player
+                div {
+                    id: "projector-player-mount",
+                    style: if is_projecting() {
+                        "width: 100%; height: 210px; background: #000000; border: 1.5px solid #00e5ff; border-radius: 10px; margin-top: 12px; overflow: hidden; box-shadow: 0 0 20px rgba(0, 229, 255, 0.3); display: block;"
+                    } else {
+                        "display: none;"
+                    },
+                }
             }
 
             // Giant Push-To-Talk Touch Pad

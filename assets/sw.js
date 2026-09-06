@@ -1,10 +1,10 @@
 // RayNeo GTA HUD - PWA Update-Aware Service Worker
-const SW_VERSION = '2026.09.06-v3';
+const SW_VERSION = '2026.09.06-v4';
 const CACHE_NAME = `rayneo-hud-cache-${SW_VERSION}`;
 
 self.addEventListener('install', (event) => {
   console.log('[ServiceWorker] New build discovered and installed:', SW_VERSION);
-  // Do NOT skipWaiting automatically: wait for user confirmation
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -20,12 +20,19 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('[ServiceWorker] User accepted update. Activating new version immediately...');
     self.skipWaiting();
   }
 });
 
 self.addEventListener('fetch', (event) => {
+  // Never intercept or cache real-time hud-interop.js, hud.css, or api requests
+  if (
+    event.request.url.includes('hud-interop.js') ||
+    event.request.url.includes('hud.css') ||
+    event.request.url.includes('/api/')
+  ) {
+    return;
+  }
   // 1. Navigation requests (HTML): Network-First (always fresh from Dokploy, offline fallback)
   if (event.request.mode === 'navigate') {
     event.respondWith(

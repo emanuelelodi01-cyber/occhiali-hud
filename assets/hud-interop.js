@@ -701,23 +701,17 @@ window.RayNeoHUD = {
       if (!this.videoEl) {
         this.videoEl = document.createElement('video');
         this.videoEl.id = 'hud-projector-video';
-        this.videoEl.setAttribute('playsinline', 'false');
+        this.videoEl.setAttribute('playsinline', '');
+        this.videoEl.setAttribute('webkit-playsinline', '');
         this.videoEl.setAttribute('x-webkit-airplay', 'allow');
-        this.videoEl.setAttribute('disableRemotePlayback', 'false');
-        this.videoEl.autoplay = true;
+        this.videoEl.setAttribute('controls', '');
         this.videoEl.muted = true;
-        this.videoEl.controls = true;
-        this.videoEl.style.position = 'fixed';
-        this.videoEl.style.bottom = '8px';
-        this.videoEl.style.right = '8px';
-        this.videoEl.style.width = '120px';
-        this.videoEl.style.height = '68px';
-        this.videoEl.style.borderRadius = '8px';
-        this.videoEl.style.border = '1.5px solid #00ff88';
-        this.videoEl.style.zIndex = '9999';
+        this.videoEl.autoplay = true;
+        this.videoEl.style.width = '100%';
+        this.videoEl.style.height = '100%';
+        this.videoEl.style.objectFit = 'contain';
+        this.videoEl.style.borderRadius = '10px';
         this.videoEl.style.background = '#000000';
-        this.videoEl.style.boxShadow = '0 0 15px rgba(0, 255, 136, 0.4)';
-        document.body.appendChild(this.videoEl);
       }
     },
 
@@ -891,34 +885,43 @@ window.RayNeoHUD = {
       ctx.restore();
     },
 
-    async startProjecting() {
+    startProjecting() {
       this.init();
       this.isActive = true;
       this.renderFrame();
 
       try {
-        if (!this.stream) {
+        if (!this.stream && this.canvasEl) {
           this.stream = this.canvasEl.captureStream(30);
           this.videoEl.srcObject = this.stream;
         }
-        await this.videoEl.play();
 
-        if (typeof this.videoEl.webkitShowPlaybackTargetPicker === 'function') {
-          console.log('[Projector] Triggering native WebKit Playback Target Picker...');
-          this.videoEl.webkitShowPlaybackTargetPicker();
+        // Mount preview player into container so it's visible with native iOS controls
+        const mount = document.getElementById('projector-player-mount');
+        if (mount && this.videoEl) {
+          mount.innerHTML = '';
+          mount.appendChild(this.videoEl);
+          mount.style.display = 'block';
+        }
+
+        this.videoEl.play().catch(e => console.warn('[Projector] Play warning:', e));
+
+        // Direct synchronous Fullscreen call on user gesture (iOS routes to USB-C display)
+        if (typeof this.videoEl.webkitEnterFullscreen === 'function') {
+          console.log('[Projector] Invoking webkitEnterFullscreen directly...');
+          this.videoEl.webkitEnterFullscreen();
           return true;
         }
 
-        if (typeof this.videoEl.webkitEnterFullscreen === 'function') {
-          console.log('[Projector] Entering WebKit Fullscreen to route to external display...');
-          this.videoEl.webkitEnterFullscreen();
+        if (typeof this.videoEl.webkitShowPlaybackTargetPicker === 'function') {
+          console.log('[Projector] Invoking webkitShowPlaybackTargetPicker...');
+          this.videoEl.webkitShowPlaybackTargetPicker();
           return true;
         }
 
         return true;
       } catch (err) {
-        console.warn('[Projector] Errore avvio proiezione video:', err);
-        alert('Avvio proiezione video: ' + (err.message || err));
+        console.warn('[Projector] Errore startProjecting:', err);
         return false;
       }
     },
@@ -928,13 +931,9 @@ window.RayNeoHUD = {
       if (this.animFrame) cancelAnimationFrame(this.animFrame);
       if (this.videoEl) {
         this.videoEl.pause();
-        if (this.videoEl.srcObject) {
-          const tracks = this.videoEl.srcObject.getTracks ? this.videoEl.srcObject.getTracks() : [];
-          tracks.forEach(t => t.stop());
-          this.videoEl.srcObject = null;
-        }
+        const mount = document.getElementById('projector-player-mount');
+        if (mount) mount.style.display = 'none';
       }
-      this.stream = null;
     }
   },
 
@@ -1521,6 +1520,7 @@ if (typeof document !== 'undefined') {
     window.RayNeoHUD.initOrientationListener();
     window.RayNeoHUD.initPwaUpdateWatcher();
     if (window.RayNeoHUD.comms) window.RayNeoHUD.comms.init();
+    if (window.RayNeoHUD.projector) window.RayNeoHUD.projector.init();
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initHUD);
