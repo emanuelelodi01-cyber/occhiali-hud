@@ -197,6 +197,12 @@ pub fn CommsWidget(
                         }
                     }
 
+                    // Hardware Tip
+                    div {
+                        style: "font-size: 9px; color: rgba(255, 255, 255, 0.45); margin-bottom: 8px; text-align: center;",
+                        "💡 Puoi attivare il microfono anche premendo il tasto fisico sulle aste RayNeo"
+                    }
+
                     // Quick Prompt Chips
                     div {
                         style: "display: flex; flex-wrap: wrap; gap: 5px;",

@@ -702,7 +702,76 @@ window.RayNeoHUD = {
       const host = window.location.host;
       this.wsUrl = `${protocol}//${host}/api/ws?client=hud`;
       this.connect();
-      this.initSpeechRecognition();
+      this.initMediaSession();
+      this.initHardwareKeyListeners();
+      this.initGamepadListener();
+    },
+
+    initMediaSession() {
+      try {
+        if (!('mediaSession' in navigator)) return;
+        if (!this.silentAudio) {
+          // 0.5s silent audio loop to keep audio session alive for temple button events
+          const silentWav = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+          this.silentAudio = new Audio(silentWav);
+          this.silentAudio.loop = true;
+          this.silentAudio.volume = 0.001;
+        }
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: 'RayNeo Push-To-Talk',
+          artist: 'Tasto RayNeo Air 4 Pro',
+          album: 'GTA 6 AR HUD'
+        });
+
+        const handlePtt = () => {
+          console.log('[MediaSession] Hardware RayNeo button triggered PTT!');
+          this.toggleListening();
+        };
+
+        ['play', 'pause', 'nexttrack', 'previoustrack'].forEach((action) => {
+          try {
+            navigator.mediaSession.setActionHandler(action, handlePtt);
+          } catch (e) {}
+        });
+      } catch (err) {
+        console.warn('[Comms] Errore setup MediaSession:', err);
+      }
+    },
+
+    initHardwareKeyListeners() {
+      window.addEventListener('keydown', (e) => {
+        // Intercept RayNeo temple rocker, headphone remote, or keyboard shortcuts
+        const triggerKeys = ['MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious', 'AudioVolumeMute', 'F12', 'F9', 'F8'];
+        if (triggerKeys.includes(e.code) || triggerKeys.includes(e.key)) {
+          e.preventDefault();
+          console.log('[Comms] Hardware key pressed:', e.code || e.key);
+          this.toggleListening();
+        }
+      });
+    },
+
+    initGamepadListener() {
+      let lastButtonPressed = false;
+      const pollGamepad = () => {
+        try {
+          const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+          for (const gp of gamepads) {
+            if (gp && gp.buttons) {
+              const isAnyPressed = gp.buttons.some(b => b && b.pressed);
+              if (isAnyPressed && !lastButtonPressed) {
+                lastButtonPressed = true;
+                console.log('[Comms] RayNeo Gamepad button pressed -> PTT toggle');
+                this.toggleListening();
+              } else if (!isAnyPressed) {
+                lastButtonPressed = false;
+              }
+            }
+          }
+        } catch (e) {}
+        requestAnimationFrame(pollGamepad);
+      };
+      requestAnimationFrame(pollGamepad);
     },
 
     connect() {
@@ -843,6 +912,7 @@ window.RayNeoHUD = {
 
       rec.onstart = () => {
         this.isListening = true;
+        this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
         this.notify();
       };
 
@@ -859,6 +929,7 @@ window.RayNeoHUD = {
         if (final) {
           this.lastUserMessage = final;
           this.sendMessage(final);
+          this.isListening = false;
         } else if (interim) {
           this.lastUserMessage = interim;
         }
@@ -868,6 +939,14 @@ window.RayNeoHUD = {
       rec.onerror = (err) => {
         console.warn('[Comms] Errore riconoscimento vocale:', err);
         this.isListening = false;
+        const errType = err.error || err.message || err;
+        if (errType === 'no-speech') {
+          this.lastUserMessage = '⚠️ Nessun audio rilevato. Riprova parlando vicino al microfono.';
+        } else if (errType === 'not-allowed') {
+          this.lastUserMessage = '⚠️ Permesso microfono negato in Safari. Abilitalo nelle Impostazioni.';
+        } else {
+          this.lastUserMessage = `⚠️ Errore microfono: ${errType}`;
+        }
         this.notify();
       };
 
@@ -879,27 +958,58 @@ window.RayNeoHUD = {
       this.recognition = rec;
     },
 
-    toggleListening() {
-      if (!this.recognition) {
-        this.initSpeechRecognition();
-        if (!this.recognition) {
-          alert('Riconoscimento vocale non supportato su questo browser. Usa i pulsanti rapidi.');
-          return false;
-        }
+    async toggleListening() {
+      // Start silent audio loop to lock MediaSession hardware button handlers
+      if (this.silentAudio && this.silentAudio.paused) {
+        try { await this.silentAudio.play(); } catch (e) {}
       }
 
       if (this.isListening) {
-        try { this.recognition.stop(); } catch (e) {}
-        this.isListening = false;
-      } else {
-        // If speaking, stop speaking so mic does not hear itself
-        this.stopSpeaking();
-        try {
-          this.recognition.start();
-          this.isListening = true;
-        } catch (e) {
-          console.warn('[Comms] Impossibile avviare microfono:', e);
+        if (this.recognition) {
+          try { this.recognition.stop(); } catch (e) {}
         }
+        this.isListening = false;
+        this.notify();
+        return false;
+      }
+
+      // Stop any speech output
+      this.stopSpeaking();
+
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        this.lastUserMessage = '⚠️ Microfono WebKit non disponibile in questa modalità PWA. Usa Safari direttamente o i pulsanti rapidi.';
+        this.notify();
+        return false;
+      }
+
+      // Explicitly request microphone stream to unlock iOS permissions
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach(t => t.stop());
+        }
+      } catch (permErr) {
+        console.warn('[Comms] Permesso microfono fallito:', permErr);
+        this.lastUserMessage = `⚠️ Permesso microfono negato: ${permErr.name || permErr.message || permErr}`;
+        this.isListening = false;
+        this.notify();
+        return false;
+      }
+
+      // Fresh instance to avoid iOS speech recognition stale state
+      try {
+        if (this.recognition) {
+          try { this.recognition.abort(); } catch (e) {}
+        }
+        this.initSpeechRecognition();
+        this.recognition.start();
+        this.isListening = true;
+        this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
+      } catch (err) {
+        console.warn('[Comms] Errore start riconoscimento:', err);
+        this.lastUserMessage = `⚠️ Errore avvio microfono: ${err.message || err}`;
+        this.isListening = false;
       }
       this.notify();
       return this.isListening;
