@@ -237,6 +237,20 @@ pub fn PhoneController(
                                 div { style: "font-size: 10px; font-weight: 800; color: #00e5ff; margin-bottom: 2px;", "TU" }
                                 div { style: "font-size: 14px; color: #ffffff; line-height: 1.4;", "{msg.text}" }
                             }
+                        } else if msg.role == "tool" {
+                            div {
+                                key: "{msg.id}",
+                                style: "align-self: flex-start; background: rgba(0, 229, 255, 0.08); border-left: 3px solid #00e5ff; border-radius: 0 8px 8px 8px; padding: 6px 10px; max-width: 95%; font-family: monospace; font-size: 12px;",
+                                div { style: "font-size: 10px; font-weight: 800; color: #00e5ff; margin-bottom: 2px;", "🛠️ TOOL ESEGUITO" }
+                                div { style: "color: #b3f0ff; line-height: 1.3; word-break: break-word;", "{msg.text}" }
+                            }
+                        } else if msg.role == "thinking" || msg.role == "thought" {
+                            div {
+                                key: "{msg.id}",
+                                style: "align-self: flex-start; background: rgba(255, 204, 0, 0.08); border-left: 3px solid #ffcc00; border-radius: 0 8px 8px 8px; padding: 6px 10px; max-width: 95%; font-size: 12px;",
+                                div { style: "font-size: 10px; font-weight: 800; color: #ffcc00; margin-bottom: 2px;", "⚡ ANALISI AGENTE" }
+                                div { style: "color: #fff2b3; font-style: italic; line-height: 1.3; word-break: break-word;", "{msg.text}" }
+                            }
                         } else {
                             div {
                                 key: "{msg.id}",

@@ -1207,6 +1207,19 @@ window.RayNeoHUD = {
       } else if (data.type === 'agent_status') {
         this.agentStatus = data.status || 'idle';
         this.toolDetail = data.toolName ? `Tool: ${data.toolName}` : '';
+      } else if (data.type === 'agent_thinking') {
+        this.agentStatus = 'thinking';
+        this.toolDetail = data.thought || 'Analisi in corso...';
+        if (data.thought) {
+          this.setTargetSubtitle(`⚡ [ANALISI] ${data.thought}`);
+          this.addHistory('thinking', data.thought);
+        }
+      } else if (data.type === 'agent_tool') {
+        this.agentStatus = 'tool_running';
+        const display = data.display || `[${data.toolName}] ${data.action || ''}`;
+        this.toolDetail = display;
+        this.setTargetSubtitle(`🛠️ ${display}`);
+        this.addHistory('tool', display);
       } else if (data.type === 'agent_response') {
         this.agentStatus = 'idle';
         this.toolDetail = '';

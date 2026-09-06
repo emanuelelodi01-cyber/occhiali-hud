@@ -12,7 +12,7 @@ const controllerSockets = new Set();
 
 // Rolling chat history buffer (persisted during container uptime)
 const recentMessages = [];
-const MAX_HISTORY = 30;
+const MAX_HISTORY = 60;
 
 function addHistory(role, text) {
   if (!text || !text.trim()) return;
@@ -148,6 +148,16 @@ wss.on('connection', (ws, req) => {
           broadcastToClients(data);
         } else if (data.type === 'agent_status') {
           lastAgentStatus = data;
+          broadcastToClients(data);
+        } else if (data.type === 'agent_thinking') {
+          lastAgentStatus = { type: 'agent_status', status: 'thinking', thought: data.thought, timestamp: Date.now() };
+          if (data.thought) {
+            addHistory('thinking', data.thought);
+          }
+          broadcastToClients(data);
+        } else if (data.type === 'agent_tool') {
+          lastAgentStatus = { type: 'agent_status', status: 'tool_running', toolName: data.toolName, action: data.action, detail: data.detail, timestamp: Date.now() };
+          addHistory('tool', data.display || `[${data.toolName}] ${data.action || ''}`);
           broadcastToClients(data);
         } else if (data.type === 'transcription_result') {
           if (data.text && !data.text.startsWith('⚠️')) {

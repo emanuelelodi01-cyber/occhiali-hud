@@ -193,6 +193,49 @@ class AntigravityBridge:
                         tool_calls = item.get("tool_calls")
 
                         if item_type == "PLANNER_RESPONSE":
+                            if thinking:
+                                thought_text = str(thinking).strip()
+                                # Extract headline or first clean sentence
+                                first_line = thought_text.split("\n")[0].replace("**", "").replace("#", "").strip()
+                                if not first_line and len(thought_text) > 0:
+                                    first_line = thought_text[:90]
+                                if len(first_line) > 90:
+                                    first_line = first_line[:87] + "..."
+                                print(f"[Transcript] Analisi agente: {first_line}")
+                                await self.ws.send(json.dumps({
+                                    "type": "agent_thinking",
+                                    "thought": first_line,
+                                    "timestamp": int(time.time() * 1000)
+                                }))
+
+                            if tool_calls and isinstance(tool_calls, list):
+                                for tc in tool_calls:
+                                    if not isinstance(tc, dict):
+                                        continue
+                                    tool_name = tc.get("name") or "tool"
+                                    args = tc.get("args") or {}
+                                    action = args.get("toolAction") or args.get("toolSummary") or ""
+                                    if isinstance(action, str):
+                                        action = action.strip('\"\'')
+                                    
+                                    target = args.get("AbsolutePath") or args.get("TargetFile") or args.get("CommandLine") or args.get("Query") or ""
+                                    if isinstance(target, str):
+                                        target = target.strip('\"\'')
+                                        if len(target) > 55:
+                                            target = "..." + target[-52:]
+                                    
+                                    display_str = f"{action}: {target}" if (action and target) else (action or target or tool_name)
+                                    print(f"[Transcript] Tool in esecuzione: [{tool_name}] {display_str}")
+                                    
+                                    await self.ws.send(json.dumps({
+                                        "type": "agent_tool",
+                                        "toolName": tool_name,
+                                        "action": action or tool_name,
+                                        "detail": target,
+                                        "display": f"[{tool_name}] {display_str}",
+                                        "timestamp": int(time.time() * 1000)
+                                    }))
+
                             if content:
                                 # Agent completed a user-facing reply!
                                 print(f"[Transcript] Nuovo messaggio agente ({len(content)} caratteri)")
@@ -203,27 +246,6 @@ class AntigravityBridge:
                                     "timestamp": int(time.time() * 1000)
                                 }
                                 await self.ws.send(json.dumps(msg))
-                            elif tool_calls:
-                                # Tool execution in progress
-                                t_name = "Operazione"
-                                if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                                    tc = tool_calls[0]
-                                    t_name = tc.get("tool_name") or list(tc.keys())[0] if isinstance(tc, dict) else "Tool"
-                                print(f"[Transcript] Tool in esecuzione: {t_name}")
-                                status_msg = {
-                                    "type": "agent_status",
-                                    "status": "tool_running",
-                                    "toolName": str(t_name),
-                                    "timestamp": int(time.time() * 1000)
-                                }
-                                await self.ws.send(json.dumps(status_msg))
-                            elif thinking:
-                                status_msg = {
-                                    "type": "agent_status",
-                                    "status": "thinking",
-                                    "timestamp": int(time.time() * 1000)
-                                }
-                                await self.ws.send(json.dumps(status_msg))
 
             except Exception as e:
                 print(f"[Watchdog] Errore scansione transcript: {e}")
