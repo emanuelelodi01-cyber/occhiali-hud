@@ -101,11 +101,12 @@ pub fn AiSubtitles(
                 // Audio Waveform Visualizer (When speaking or listening)
                 if comms.is_speaking || comms.is_listening || comms.agent_status == "speaking" {
                     div {
-                        style: "display: flex; justify-content: center; align-items: flex-end; gap: 5px; height: 20px; margin-bottom: 12px;",
-                        for h in [6, 14, 10, 18, 12, 8, 16, 11, 20, 15, 9, 17, 12, 6] {
-                            div {
-                                style: "width: 4px; height: {h}px; background: {th.primary}; border-radius: 2px; box-shadow: 0 0 10px {th.primary};"
-                            }
+                        style: "display: flex; justify-content: center; align-items: center; height: 28px; margin-bottom: 12px;",
+                        canvas {
+                            class: "live-waveform-canvas",
+                            width: "240",
+                            height: "24",
+                            "data-color": "{th.primary}",
                         }
                     }
                 }

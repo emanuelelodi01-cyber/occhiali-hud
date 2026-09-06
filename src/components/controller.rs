@@ -1,8 +1,15 @@
 use dioxus::prelude::*;
 use crate::gps::{
-    commsSendHudCommand, commsSendMessage, commsSetClientRole,
-    commsToggleListening, commsToggleTts, CommsState, HudTheme,
+    commsCancelRecording, commsSendHudCommand, commsSendLockedRecording,
+    commsSendMessage, commsSetClientRole, commsToggleTts,
+    CommsState, HudTheme,
 };
+
+fn format_duration(sec: u32) -> String {
+    let mins = sec / 60;
+    let secs = sec % 60;
+    format!("{:02}:{:02}", mins, secs)
+}
 
 #[component]
 pub fn PhoneController(
@@ -21,12 +28,6 @@ pub fn PhoneController(
         ("COLLEGATO AD ANTIGRAVITY PC", "#00ff88")
     } else {
         ("IN ATTESA DEL BRIDGE PC", "#ffbb00")
-    };
-
-    let ptt_label = if comms.is_listening {
-        "🔴 IN ASCOLTO... (TOCCA PER INVIARE)"
-    } else {
-        "🎙️ PUSH TO TALK (TOCCA PER PARLARE)"
     };
 
     rsx! {
@@ -80,44 +81,11 @@ pub fn PhoneController(
                 }
             }
 
-            // Giant Push-To-Talk Touch Pad
-            div {
-                style: "margin-bottom: 18px;",
-                button {
-                    id: "controller-ptt-btn",
-                    onclick: move |_| {
-                        // Normal tap disabled: 3D Touch only!
-                    },
-                    style: if comms.is_listening {
-                        "width: 100%; height: 110px; background: linear-gradient(135deg, #ff1a40 0%, #b30024 100%); border: 2px solid #ff4d6d; border-radius: 16px; color: #ffffff; font-family: 'Orbitron', monospace; font-size: 15px; font-weight: 900; letter-spacing: 1px; cursor: pointer; box-shadow: 0 0 30px rgba(255, 26, 64, 0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease;"
-                    } else {
-                        "width: 100%; height: 110px; background: linear-gradient(135deg, rgba(0, 255, 136, 0.2) 0%, rgba(0, 150, 80, 0.25) 100%); border: 2px solid rgba(0, 255, 136, 0.7); border-radius: 16px; color: #00ff88; font-family: 'Orbitron', monospace; font-size: 15px; font-weight: 900; letter-spacing: 1px; cursor: pointer; box-shadow: 0 0 20px rgba(0, 255, 136, 0.25); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease;"
-                    },
-                    div {
-                        style: "font-size: 26px;",
-                        if comms.is_listening { "🔴" } else { "⚡" }
-                    }
-                    div {
-                        if comms.is_listening {
-                            "🔴 3D TOUCH ATTIVO (Rilascia per inviare)"
-                        } else {
-                            "⚡ PREMI 3D TOUCH PER PARLARE"
-                        }
-                    }
-                    if comms.is_listening {
-                        div {
-                            style: "font-size: 11px; color: #ffccd5; font-family: 'Rajdhani', sans-serif; font-weight: 700;",
-                            "Audio in streaming verso il server..."
-                        }
-                    }
-                }
-            }
-
             // Remote HUD Control Grid (Tactile Quick Commands)
             div {
-                style: "margin-bottom: 18px;",
+                style: "margin-bottom: 14px;",
                 div {
-                    style: "font-size: 12px; font-weight: 800; letter-spacing: 1px; color: rgba(255, 255, 255, 0.5); margin-bottom: 8px;",
+                    style: "font-size: 11px; font-weight: 800; letter-spacing: 1px; color: rgba(255, 255, 255, 0.5); margin-bottom: 6px;",
                     "COMANDI RAPIDI HUD OCCHIALI:"
                 }
                 div {
@@ -264,6 +232,108 @@ pub fn PhoneController(
                                 style: "align-self: flex-start; background: rgba(0, 255, 136, 0.1); border-left: 3px solid #00ff88; border-radius: 0 8px 8px 8px; padding: 8px 12px; max-width: 90%;",
                                 div { style: "font-size: 10px; font-weight: 800; color: #00ff88; margin-bottom: 2px;", "ANTIGRAVITY AI" }
                                 div { style: "font-size: 14px; color: #e6fffa; line-height: 1.4; word-break: break-word;", "{msg.text}" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // WhatsApp-style Floating Voice Dock (Slide-to-Lock ⬆️ 🔒 & Live Waveform)
+            div {
+                class: "whatsapp-voice-dock-container",
+                id: "whatsapp-voice-dock-container",
+
+                // Locked Hands-Free Panel (Visible when is_locked is true)
+                div {
+                    class: if comms.is_locked { "whatsapp-locked-panel is-active" } else { "whatsapp-locked-panel" },
+                    id: "whatsapp-locked-panel",
+
+                    // Discard / Cancel Button
+                    button {
+                        id: "dock-cancel-btn",
+                        class: "whatsapp-btn-cancel",
+                        r#type: "button",
+                        onclick: move |_| {
+                            commsCancelRecording();
+                        },
+                        span { class: "whatsapp-btn-icon", "🗑️" }
+                        span { class: "whatsapp-btn-label", "ANNULLA" }
+                    }
+
+                    // Center Waveform & Timer
+                    div {
+                        class: "whatsapp-locked-status",
+                        div {
+                            class: "whatsapp-timer-row",
+                            span { class: "whatsapp-rec-dot", "🔴" }
+                            span {
+                                id: "whatsapp-timer-text",
+                                class: "whatsapp-timer-text",
+                                "{format_duration(comms.record_duration_sec)}"
+                            }
+                            span { class: "whatsapp-rec-badge", "HANDS-FREE" }
+                        }
+                        canvas {
+                            class: "live-waveform-canvas whatsapp-waveform-canvas",
+                            id: "controller-waveform-canvas",
+                            width: "140",
+                            height: "32",
+                            "data-color": "#00ff88",
+                        }
+                    }
+
+                    // Send Button
+                    button {
+                        id: "dock-send-btn",
+                        class: "whatsapp-btn-send",
+                        r#type: "button",
+                        onclick: move |_| {
+                            commsSendLockedRecording();
+                        },
+                        span { class: "whatsapp-btn-icon", "🚀" }
+                        span { class: "whatsapp-btn-label", "INVIA" }
+                    }
+                }
+
+                // Idle & Dragging Bar (Hidden when locked)
+                div {
+                    class: if comms.is_locked { "whatsapp-idle-bar is-hidden" } else { "whatsapp-idle-bar" },
+                    id: "whatsapp-idle-bar",
+
+                    // Lock Guide Track (animates vertically upwards)
+                    div {
+                        class: "whatsapp-lock-track",
+                        id: "whatsapp-lock-track",
+                        div { class: "whatsapp-lock-icon", "🔒" }
+                        div { class: "whatsapp-lock-arrow", "▲" }
+                        div { class: "whatsapp-lock-text", "Scorri in alto per bloccare" }
+                    }
+
+                    // Slide Cancel hint
+                    div {
+                        class: "whatsapp-slide-cancel",
+                        id: "whatsapp-slide-cancel",
+                        "◀️ Scorri per annullare"
+                    }
+
+                    // Idle Hint text
+                    div {
+                        class: "whatsapp-idle-hint",
+                        id: "whatsapp-idle-hint",
+                        div { class: "hint-title", "VOCE ANTIGRAVITY" }
+                        div { class: "hint-sub", "Tieni premuto per parlare • Trascina ⬆️ per bloccare" }
+                    }
+
+                    // The Floating Mic Button
+                    button {
+                        id: "whatsapp-mic-btn",
+                        class: if comms.is_listening { "whatsapp-floating-mic-btn is-listening" } else { "whatsapp-floating-mic-btn" },
+                        r#type: "button",
+                        div {
+                            class: "whatsapp-mic-circle",
+                            div {
+                                class: "whatsapp-mic-icon",
+                                if comms.is_listening { "🔴" } else { "🎙️" }
                             }
                         }
                     }

@@ -13,7 +13,7 @@ use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
 use components::subtitles::AiSubtitles;
 use gps::{
-    commsGetStateJson, commsInit, commsSetClientRole, commsToggleListening, commsToggleTts, getBatteryLevel, getHeading, getLocationName,
+    commsGetStateJson, commsInit, commsSetClientRole, commsToggleTts, getBatteryLevel, getHeading, getLocationName,
     isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
     CommsState, GpsData, HudTheme,
 };
@@ -305,16 +305,23 @@ fn App() -> Element {
                     r#type: "button",
                     id: "hud-center-sight",
                     class: if comms_state().is_listening { "hud-center-sight is-listening" } else { "hud-center-sight" },
-                    onclick: move |_| {
-                        // Normal tap disabled: 3D Touch only!
-                    },
+                    onclick: move |_| {},
                     div { class: "hud-crosshair" }
                     div {
                         class: "hud-sight-label",
                         if comms_state().is_listening {
-                            "🔴 3D TOUCH ATTIVO (Rilascia per inviare)"
+                            "🔴 IN ASCOLTO (Parla ora)"
                         } else {
-                            "⚡ PREMI 3D TOUCH PER PARLARE"
+                            "🎙️ VOCE ANTIGRAVITY"
+                        }
+                    }
+                    if comms_state().is_listening {
+                        canvas {
+                            class: "live-waveform-canvas hud-sight-waveform",
+                            id: "hud-waveform-canvas",
+                            width: "120",
+                            height: "22",
+                            "data-color": "#ff2a55",
                         }
                     }
                 }

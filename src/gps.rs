@@ -106,6 +106,15 @@ extern "C" {
     pub fn commsStopSpeaking();
 
     #[wasm_bindgen]
+    pub fn commsCancelRecording() -> bool;
+
+    #[wasm_bindgen]
+    pub fn commsSendLockedRecording() -> bool;
+
+    #[wasm_bindgen]
+    pub fn commsLockRecording() -> bool;
+
+    #[wasm_bindgen]
     pub fn commsSendHudCommand(cmd: &str, payload_json: &str);
 
     #[wasm_bindgen]
@@ -137,6 +146,10 @@ pub struct CommsState {
     pub is_listening: bool,
     #[serde(rename = "isSpeaking")]
     pub is_speaking: bool,
+    #[serde(rename = "isLocked", default)]
+    pub is_locked: bool,
+    #[serde(rename = "recordDurationSec", default)]
+    pub record_duration_sec: u32,
     #[serde(rename = "agentStatus")]
     pub agent_status: String,
     #[serde(rename = "toolDetail")]
@@ -163,6 +176,8 @@ impl Default for CommsState {
             tts_enabled: true,
             is_listening: false,
             is_speaking: false,
+            is_locked: false,
+            record_duration_sec: 0,
             agent_status: "idle".to_string(),
             tool_detail: String::new(),
             last_agent_message: "In attesa di collegamento con la sessione PC...".to_string(),

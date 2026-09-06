@@ -1353,16 +1353,131 @@ window.RayNeoHUD = {
     audioChunks: [],
     audioStream: null,
     isListening: false,
+    isLocked: false,
+    recordStartTime: 0,
+    recordDurationSec: 0,
+    waveformLevels: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    analyserCtx: null,
+    analyserNode: null,
+    analyserData: null,
+    animFrameId: null,
     _recordSessionId: 0,
+    _isCancelled: false,
     _lastToggleTime: 0,
+
+    initAudioAnalyser(stream) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!this.analyserCtx) {
+          this.analyserCtx = new AudioCtx();
+        }
+        if (this.analyserCtx.state === 'suspended') {
+          this.analyserCtx.resume();
+        }
+        const source = this.analyserCtx.createMediaStreamSource(stream);
+        this.analyserNode = this.analyserCtx.createAnalyser();
+        this.analyserNode.fftSize = 64;
+        this.analyserNode.smoothingTimeConstant = 0.55;
+        source.connect(this.analyserNode);
+        this.analyserData = new Uint8Array(this.analyserNode.frequencyBinCount);
+        this.startWaveformLoop();
+      } catch (e) {
+        console.warn('[Comms] Web Audio Analyser warning:', e);
+      }
+    },
+
+    startWaveformLoop() {
+      if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
+      const loop = () => {
+        if (!this.isListening) {
+          this.waveformLevels.fill(0);
+          this.drawWaveformCanvases();
+          return;
+        }
+
+        if (this.analyserNode && this.analyserData) {
+          this.analyserNode.getByteFrequencyData(this.analyserData);
+          for (let i = 0; i < 16; i++) {
+            const val = this.analyserData[i + 1] || 0;
+            this.waveformLevels[i] = val / 255.0;
+          }
+        }
+
+        if (this.recordStartTime > 0) {
+          this.recordDurationSec = Math.floor((Date.now() - this.recordStartTime) / 1000);
+          const mins = String(Math.floor(this.recordDurationSec / 60)).padStart(2, '0');
+          const secs = String(this.recordDurationSec % 60).padStart(2, '0');
+          const timerEl = document.getElementById('whatsapp-timer-text');
+          if (timerEl) {
+            timerEl.textContent = `${mins}:${secs}`;
+          }
+        }
+
+        this.drawWaveformCanvases();
+        this.animFrameId = requestAnimationFrame(loop);
+      };
+      this.animFrameId = requestAnimationFrame(loop);
+    },
+
+    stopWaveformAnalyser() {
+      if (this.animFrameId) {
+        cancelAnimationFrame(this.animFrameId);
+        this.animFrameId = null;
+      }
+      this.waveformLevels.fill(0);
+      this.drawWaveformCanvases();
+    },
+
+    drawWaveformCanvases() {
+      const canvases = document.querySelectorAll('.live-waveform-canvas');
+      if (!canvases.length) return;
+      const levels = this.waveformLevels;
+      const numBars = levels.length;
+
+      canvases.forEach((canvas) => {
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const w = canvas.width;
+        const h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const color = canvas.dataset.color || '#00ff88';
+        const gap = 3;
+        const barWidth = Math.max(3, (w - (numBars - 1) * gap) / numBars);
+
+        for (let i = 0; i < numBars; i++) {
+          const raw = levels[i];
+          const level = Math.max(0.12, raw);
+          const barHeight = Math.max(3, level * (h - 4));
+          const x = i * (barWidth + gap);
+          const y = (h - barHeight) / 2;
+
+          ctx.fillStyle = color;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = raw > 0.25 ? 8 : 1;
+
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(x, y, barWidth, barHeight, barWidth / 2);
+          } else {
+            ctx.rect(x, y, barWidth, barHeight);
+          }
+          ctx.fill();
+        }
+      });
+    },
 
     startRecording() {
       if (this.isListening) return false;
       this.isListening = true;
+      this.isLocked = false;
+      this._isCancelled = false;
+      this.recordStartTime = Date.now();
+      this.recordDurationSec = 0;
       const currentSession = ++this._recordSessionId;
 
       this.stopSpeaking();
-      this.lastUserMessage = '🎙️ In ascolto... Parla ora! (Tocca per inviare)';
+      this.lastUserMessage = '🎙️ In ascolto... Parla ora! (Scorri ⬆️ per bloccare)';
       this.notify();
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1382,7 +1497,7 @@ window.RayNeoHUD = {
 
       navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
         // If the user cancelled or stopped while getUserMedia was resolving
-        if (this._recordSessionId !== currentSession || !this.isListening) {
+        if (this._recordSessionId !== currentSession || !this.isListening || this._isCancelled) {
           console.log('[Comms] getUserMedia terminato ma la registrazione era già stata chiusa.');
           stream.getTracks().forEach(t => t.stop());
           return;
@@ -1390,6 +1505,7 @@ window.RayNeoHUD = {
 
         this.audioStream = stream;
         this.audioChunks = [];
+        this.initAudioAnalyser(stream);
         
         try {
           this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -1407,6 +1523,13 @@ window.RayNeoHUD = {
           if (this.audioStream) {
             this.audioStream.getTracks().forEach(t => t.stop());
             this.audioStream = null;
+          }
+          this.stopWaveformAnalyser();
+
+          if (this._isCancelled || this._recordSessionId !== currentSession) {
+            console.log('[Comms] Registrazione annullata o sessione scartata: audio non inviato.');
+            this.audioChunks = [];
+            return;
           }
 
           const finalMime = (this.mediaRecorder && this.mediaRecorder.mimeType) || mimeType || 'audio/mp4';
@@ -1444,6 +1567,7 @@ window.RayNeoHUD = {
         console.warn('[Comms] Errore microfono getUserMedia:', err);
         if (this._recordSessionId === currentSession) {
           this.isListening = false;
+          this.isLocked = false;
           this.lastUserMessage = '⚠️ Errore microfono: ' + (err.name || err.message || err);
           this.notify();
         }
@@ -1456,6 +1580,7 @@ window.RayNeoHUD = {
       if (!this.isListening) return false;
       this._recordSessionId++; // Invalidate active session immediately
       this.isListening = false;
+      this.isLocked = false;
 
       if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
         try { this.mediaRecorder.stop(); } catch (e) {}
@@ -1463,8 +1588,34 @@ window.RayNeoHUD = {
         try { this.audioStream.getTracks().forEach(t => t.stop()); } catch(e){}
         this.audioStream = null;
       }
+      this.stopWaveformAnalyser();
       this.notify();
       return true;
+    },
+
+    cancelRecording() {
+      if (!this.isListening) return false;
+      this._isCancelled = true;
+      this._recordSessionId++;
+      this.isListening = false;
+      this.isLocked = false;
+      this.audioChunks = [];
+
+      if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+        try { this.mediaRecorder.stop(); } catch (e) {}
+      } else if (this.audioStream) {
+        try { this.audioStream.getTracks().forEach(t => t.stop()); } catch(e){}
+        this.audioStream = null;
+      }
+      this.stopWaveformAnalyser();
+      this.lastUserMessage = '❌ Registrazione annullata.';
+      this.notify();
+      return true;
+    },
+
+    sendLockedRecording() {
+      this.isLocked = false;
+      return this.stopRecording();
     },
 
     toggleListening() {
@@ -1510,6 +1661,8 @@ window.RayNeoHUD = {
         ttsEnabled: this.ttsEnabled,
         isListening: this.isListening,
         isSpeaking: this.isSpeaking,
+        isLocked: this.isLocked,
+        recordDurationSec: this.recordDurationSec,
         agentStatus: this.agentStatus,
         toolDetail: this.toolDetail,
         lastAgentMessage: this.lastAgentMessage,
@@ -1581,6 +1734,29 @@ window.commsStopListening = function() {
   if (window.RayNeoHUD && window.RayNeoHUD.comms) {
     try { if (navigator.vibrate) navigator.vibrate(25); } catch (e) {}
     window.RayNeoHUD.comms.stopRecording();
+    return true;
+  }
+  return false;
+};
+
+window.commsCancelRecording = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    return window.RayNeoHUD.comms.cancelRecording();
+  }
+  return false;
+};
+
+window.commsSendLockedRecording = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    return window.RayNeoHUD.comms.sendLockedRecording();
+  }
+  return false;
+};
+
+window.commsLockRecording = function() {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    window.RayNeoHUD.comms.isLocked = true;
+    window.RayNeoHUD.comms.notify();
     return true;
   }
   return false;
@@ -1696,88 +1872,231 @@ if (typeof document !== 'undefined') {
     } catch(e) {}
   };
 
-  // Pure 3D Touch / Haptic Touch Engine (Normal click completely disabled!)
-  const bindPttElement = (btn) => {
-    if (!btn || btn._pttBound) return;
-    btn._pttBound = true;
+  // WhatsApp-style Floating Audio Dock with Slide-To-Lock (⬆️ 🔒) & Slide-To-Cancel (◀️)
+  const bindWhatsAppFloatingDock = () => {
+    const micBtn = document.getElementById('whatsapp-mic-btn');
+    const container = document.getElementById('whatsapp-voice-dock-container');
+    const cancelBtn = document.getElementById('dock-cancel-btn');
+    const sendBtn = document.getElementById('dock-send-btn');
+    const lockTrack = document.getElementById('whatsapp-lock-track');
 
-    let isRecording = false;
-    let hapticTimer = null;
+    if (cancelBtn && !cancelBtn._bound) {
+      cancelBtn._bound = true;
+      cancelBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        triggerTapticEngine('medium');
+        playTactileClick(500, 0.04);
+        window.commsCancelRecording();
+        if (container) container.classList.remove('is-locked', 'is-recording');
+      });
+    }
 
-    // User touches screen: start 3D Touch pressure buildup
-    const handlePressDown = (e) => {
-      unlockAudioEngine();
-      initIosHaptics();
-      isRecording = false;
-      btn.classList.add('is-priming');
-
-      if (hapticTimer) clearTimeout(hapticTimer);
-
-      // 350ms deliberate 3D Touch threshold
-      hapticTimer = setTimeout(() => {
-        btn.classList.remove('is-priming');
-        btn.classList.add('is-listening');
-
-        // Physical Taptic Engine Buzz + Audio Micro-Click
+    if (sendBtn && !sendBtn._bound) {
+      sendBtn._bound = true;
+      sendBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         triggerTapticEngine('heavy');
-        playTactileClick(900, 0.03);
+        playTactileClick(1000, 0.04);
+        window.commsSendLockedRecording();
+        if (container) container.classList.remove('is-locked', 'is-recording');
+      });
+    }
+
+    if (micBtn && !micBtn._whatsappBound) {
+      micBtn._whatsappBound = true;
+
+      let isPointerDown = false;
+      let startX = 0;
+      let startY = 0;
+      let pressStartTime = 0;
+      let isLocked = false;
+      let isCancelled = false;
+
+      const onPointerDown = (e) => {
+        unlockAudioEngine();
+        initIosHaptics();
+        isPointerDown = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        pressStartTime = Date.now();
+        isLocked = false;
+        isCancelled = false;
+
+        triggerTapticEngine('medium');
+        playTactileClick(850, 0.03);
 
         const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
         if (comms && !comms.isListening) {
           comms.stopSpeaking();
           comms.startRecording();
-          isRecording = true;
         }
-      }, 350);
-    };
 
-    // User lifts finger: cancel if quick tap, send if 3D Touch hold
-    const handlePressRelease = (e) => {
-      btn.classList.remove('is-priming');
+        if (container) {
+          container.classList.add('is-recording');
+          container.classList.remove('is-locked');
+        }
 
-      if (hapticTimer) {
-        clearTimeout(hapticTimer);
-        hapticTimer = null;
-      }
+        try { micBtn.setPointerCapture(e.pointerId); } catch(err) {}
+      };
 
-      if (isRecording) {
-        isRecording = false;
-        btn.classList.remove('is-listening');
+      const onPointerMove = (e) => {
+        if (!isPointerDown || isLocked || isCancelled) return;
 
-        // Physical Taptic Release Click + Audio Micro-Click
-        triggerTapticEngine('medium');
-        playTactileClick(650, 0.025);
+        const deltaY = startY - e.clientY; // Upwards
+        const deltaX = startX - e.clientX; // Leftwards
 
+        // Vertical Slide-To-Lock threshold: 45px
+        if (deltaY >= 45) {
+          isLocked = true;
+          isPointerDown = false;
+          triggerTapticEngine('heavy');
+          playTactileClick(1250, 0.045);
+
+          const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+          if (comms) {
+            comms.isLocked = true;
+            comms.notify();
+          }
+
+          if (container) {
+            container.classList.remove('is-recording');
+            container.classList.add('is-locked');
+          }
+          if (micBtn) micBtn.style.transform = '';
+          return;
+        }
+
+        // Horizontal Slide-To-Cancel threshold: 75px
+        if (deltaX >= 75) {
+          isCancelled = true;
+          isPointerDown = false;
+          triggerTapticEngine('medium');
+          playTactileClick(450, 0.03);
+
+          const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+          if (comms) {
+            comms.cancelRecording();
+          }
+
+          if (container) {
+            container.classList.remove('is-recording', 'is-locked');
+          }
+          if (micBtn) micBtn.style.transform = '';
+          return;
+        }
+
+        // Smooth physical drag feedback
+        if (deltaY > 6) {
+          const clampedY = Math.min(45, Math.max(0, deltaY));
+          micBtn.style.transform = `translateY(-${clampedY}px) scale(1.12)`;
+          if (lockTrack) {
+            lockTrack.style.opacity = '1';
+            lockTrack.style.transform = `translateY(-${Math.floor(clampedY * 0.35)}px)`;
+          }
+        } else if (deltaX > 6) {
+          const clampedX = Math.min(60, Math.max(0, deltaX));
+          micBtn.style.transform = `translateX(-${clampedX}px)`;
+        } else {
+          micBtn.style.transform = '';
+          if (lockTrack) {
+            lockTrack.style.opacity = '';
+            lockTrack.style.transform = '';
+          }
+        }
+      };
+
+      const onPointerUp = (e) => {
+        if (!isPointerDown) return;
+        isPointerDown = false;
+        micBtn.style.transform = '';
+        if (lockTrack) {
+          lockTrack.style.opacity = '';
+          lockTrack.style.transform = '';
+        }
+
+        if (isLocked) {
+          // Hands-Free active! Lifting finger keeps recording active.
+          return;
+        }
+
+        if (isCancelled) {
+          if (container) container.classList.remove('is-recording', 'is-locked');
+          return;
+        }
+
+        const duration = Date.now() - pressStartTime;
         const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
-        if (comms && comms.isListening) {
+
+        if (duration >= 250) {
+          // Normal Hold-to-Talk release -> send audio!
+          triggerTapticEngine('medium');
+          playTactileClick(700, 0.025);
+          if (comms && comms.isListening) {
+            comms.stopRecording();
+          }
+        } else {
+          // Too short tap: discard and hint user
+          if (comms && comms.isListening) {
+            comms.cancelRecording();
+            comms.lastUserMessage = '💡 Tieni premuto per parlare o scorri ⬆️ per bloccare';
+            comms.notify();
+          }
+        }
+
+        if (container) container.classList.remove('is-recording', 'is-locked');
+      };
+
+      micBtn.addEventListener('pointerdown', onPointerDown);
+      micBtn.addEventListener('pointermove', onPointerMove);
+      micBtn.addEventListener('pointerup', onPointerUp);
+      micBtn.addEventListener('pointercancel', onPointerUp);
+
+      micBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return false;
+      }, true);
+    }
+  };
+
+  // Center Sight PTT for RayNeo HUD Screen
+  const bindCenterSight = (btn) => {
+    if (!btn || btn._sightBound) return;
+    btn._sightBound = true;
+
+    btn.addEventListener('pointerdown', (e) => {
+      unlockAudioEngine();
+      initIosHaptics();
+      triggerTapticEngine('medium');
+      playTactileClick(850, 0.03);
+      const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+      if (comms) {
+        if (comms.isListening) {
           comms.stopRecording();
+        } else {
+          comms.stopSpeaking();
+          comms.startRecording();
         }
       }
-    };
+    });
 
-    btn.addEventListener('pointerdown', handlePressDown);
-    btn.addEventListener('pointerup', handlePressRelease);
-    btn.addEventListener('pointercancel', handlePressRelease);
-    btn.addEventListener('touchend', handlePressRelease);
-    btn.addEventListener('touchcancel', handlePressRelease);
-
-    // Completely swallow ALL regular clicks!
-    // Normal tap or click will NEVER activate anything.
     btn.addEventListener('click', (e) => {
-      e.stopImmediatePropagation();
       e.preventDefault();
-      return false;
+      e.stopImmediatePropagation();
     }, true);
   };
 
-  const bindPttButtons = () => {
-    bindPttElement(document.getElementById('hud-center-sight'));
-    bindPttElement(document.getElementById('controller-ptt-btn'));
+  const bindAllVoiceControls = () => {
+    bindWhatsAppFloatingDock();
+    bindCenterSight(document.getElementById('hud-center-sight'));
+    bindCenterSight(document.getElementById('controller-ptt-btn'));
   };
 
   const observer = new MutationObserver(() => {
-    bindPttButtons();
+    bindAllVoiceControls();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  setTimeout(bindPttButtons, 500);
+  setTimeout(bindAllVoiceControls, 500);
 }
