@@ -1480,6 +1480,102 @@ window.RayNeoHUD = {
       this.lastUserMessage = '🎙️ In ascolto... Parla ora! (Scorri ⬆️ per bloccare)';
       this.notify();
 
+      // ── Percorso 1: Web Speech API (nativo su Safari iOS / Chrome) ──────────
+      // Trascrive localmente sul dispositivo, invia testo come user_message.
+      // Non richiede ffmpeg né Google STT sul bridge Python.
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          if (this._speechRec) {
+            try { this._speechRec.abort(); } catch (e) {}
+            this._speechRec = null;
+          }
+
+          const rec = new SpeechRecognition();
+          rec.lang = 'it-IT';
+          rec.continuous = false;
+          rec.interimResults = false;
+          rec.maxAlternatives = 1;
+          this._speechRec = rec;
+
+          // Avvia anche il waveform visivo via getUserMedia (best-effort)
+          if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+              if (this._recordSessionId === currentSession && this.isListening) {
+                this.audioStream = stream;
+                this.initAudioAnalyser(stream);
+              } else {
+                stream.getTracks().forEach(t => t.stop());
+              }
+            }).catch(() => {});
+          }
+
+          rec.onresult = (event) => {
+            if (this._isCancelled || this._recordSessionId !== currentSession) return;
+            const transcript = event.results[0][0].transcript.trim();
+            const confidence = event.results[0][0].confidence;
+            console.log('[STT] Trascritto (conf=' + confidence.toFixed(2) + '):', transcript);
+
+            if (transcript) {
+              this.lastUserMessage = '✅ ' + transcript;
+              this.addHistory('user', transcript);
+              this.notify();
+              // Invia testo direttamente come user_message al bridge Python
+              if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({
+                  type: 'user_message',
+                  text: transcript,
+                  timestamp: Date.now()
+                }));
+              }
+            } else {
+              this.lastUserMessage = '⚠️ Nessun parlato rilevato.';
+              this.notify();
+            }
+          };
+
+          rec.onerror = (event) => {
+            console.warn('[STT] Errore SpeechRecognition:', event.error);
+            if (this._recordSessionId !== currentSession) return;
+            if (event.error === 'no-speech') {
+              this.lastUserMessage = '⚠️ Nessun parlato rilevato. Riprova.';
+            } else if (event.error === 'not-allowed') {
+              this.lastUserMessage = '⚠️ Microfono non autorizzato. Controlla impostazioni Safari.';
+            } else {
+              this.lastUserMessage = '⚠️ Errore STT: ' + event.error;
+            }
+            this.isListening = false;
+            this._speechRec = null;
+            if (this.audioStream) {
+              this.audioStream.getTracks().forEach(t => t.stop());
+              this.audioStream = null;
+            }
+            this.stopWaveformAnalyser();
+            this.notify();
+          };
+
+          rec.onend = () => {
+            if (this.audioStream) {
+              this.audioStream.getTracks().forEach(t => t.stop());
+              this.audioStream = null;
+            }
+            this.stopWaveformAnalyser();
+            if (this.isListening && this._recordSessionId === currentSession && !this._isCancelled) {
+              this.isListening = false;
+            }
+            this._speechRec = null;
+            this.notify();
+          };
+
+          rec.start();
+          this.notify();
+          return true;
+        } catch (e) {
+          console.warn('[STT] SpeechRecognition fallita, uso MediaRecorder:', e);
+        }
+      }
+
+      // ── Percorso 2: Fallback MediaRecorder → user_audio → bridge Python ─────
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         this.isListening = false;
         this.lastUserMessage = '⚠️ Registrazione audio non supportata.';
@@ -1487,7 +1583,6 @@ window.RayNeoHUD = {
         return false;
       }
 
-      // Detect supported audio mimeType on iOS Safari
       let mimeType = '';
       if (typeof MediaRecorder !== 'undefined') {
         if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
@@ -1496,7 +1591,6 @@ window.RayNeoHUD = {
       }
 
       navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-        // If the user cancelled or stopped while getUserMedia was resolving
         if (this._recordSessionId !== currentSession || !this.isListening || this._isCancelled) {
           console.log('[Comms] getUserMedia terminato ma la registrazione era già stata chiusa.');
           stream.getTracks().forEach(t => t.stop());
@@ -1506,7 +1600,7 @@ window.RayNeoHUD = {
         this.audioStream = stream;
         this.audioChunks = [];
         this.initAudioAnalyser(stream);
-        
+
         try {
           this.mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
         } catch (e) {
@@ -1549,7 +1643,7 @@ window.RayNeoHUD = {
           reader.onloadend = () => {
             const base64Data = (reader.result || '').split(',')[1];
             if (base64Data && this.ws && this.ws.readyState === WebSocket.OPEN) {
-              console.log('[Comms] Invio blob vocale (' + blob.size + ' bytes) a PC...');
+              console.log('[Comms] Fallback: invio blob vocale (' + blob.size + ' bytes) a PC...');
               this.ws.send(JSON.stringify({
                 type: 'user_audio',
                 audio: base64Data,
@@ -1582,6 +1676,12 @@ window.RayNeoHUD = {
       this.isListening = false;
       this.isLocked = false;
 
+      // Stop Web Speech API if active
+      if (this._speechRec) {
+        try { this._speechRec.stop(); } catch (e) {}
+        this._speechRec = null;
+      }
+
       if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
         try { this.mediaRecorder.stop(); } catch (e) {}
       } else if (this.audioStream) {
@@ -1600,6 +1700,12 @@ window.RayNeoHUD = {
       this.isListening = false;
       this.isLocked = false;
       this.audioChunks = [];
+
+      // Abort Web Speech API if active
+      if (this._speechRec) {
+        try { this._speechRec.abort(); } catch (e) {}
+        this._speechRec = null;
+      }
 
       if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
         try { this.mediaRecorder.stop(); } catch (e) {}

@@ -13,7 +13,7 @@ import time
 import urllib.request
 import websockets
 
-DEFAULT_TRANSCRIPT = r"C:\Users\HellJack\.gemini\antigravity\brain\8b821246-0476-44f4-875d-18fbf98268f1\.system_generated\logs\transcript.jsonl"
+DEFAULT_TRANSCRIPT = r"C:\Users\HellJack\.gemini\antigravity\brain\9c04195d-c1da-425d-871c-ff49882dd2bd\.system_generated\logs\transcript.jsonl"
 DEFAULT_RELAY_URL = "wss://occhiali.cyb01.giize.com/api/ws?client=pc"
 CDP_PORT = 58700
 
@@ -45,42 +45,92 @@ class AntigravityBridge:
         print(f"[Bridge] Ricevuto messaggio dall'HUD: '{text}' -> Iniezione in Antigravity...")
         cdp_url = await self.get_cdp_ws_url()
         if not cdp_url:
-            print("[CDP] Impossibile trovare la finestra di Antigravity!")
+            print("[CDP] Impossibile trovare la finestra di Antigravity! Assicurati che Chrome/Edge sia aperto con --remote-debugging-port=58700")
             return False
 
         try:
             async with websockets.connect(cdp_url) as cdp_ws:
-                # 1. Focus and insert text using execCommand & InputEvent
+                # Prova più selectors per trovare l'input di Antigravity IDE
                 expr = f"""
                 (function() {{
-                    const input = document.querySelector('[aria-label="Message input"]') || document.querySelector('div[role="combobox"]');
-                    if (!input) return {{"error": "input_not_found"}};
+                    const selectors = [
+                        '[aria-label="Message input"]',
+                        'div[role="combobox"]',
+                        'div[contenteditable="true"]',
+                        'textarea[placeholder]',
+                        'input[type="text"]',
+                        '.message-input',
+                        '[data-testid="message-input"]',
+                        '#chat-input',
+                        '.chat-input'
+                    ];
+
+                    let input = null;
+                    for (const sel of selectors) {{
+                        const el = document.querySelector(sel);
+                        if (el && el.offsetParent !== null) {{
+                            input = el;
+                            console.log('[CDP-Bridge] Input trovato con selector:', sel);
+                            break;
+                        }}
+                    }}
+
+                    if (!input) {{
+                        // Log tutti gli elementi interattivi visibili per debug
+                        const all = Array.from(document.querySelectorAll('textarea, input[type="text"], div[contenteditable]'));
+                        console.log('[CDP-Bridge] Input non trovato. Elementi disponibili:', all.map(e => e.tagName + '.' + e.className).join(', '));
+                        return {{error: "input_not_found", available: all.length}};
+                    }}
+
                     input.focus();
-                    document.execCommand('selectAll', false, null);
-                    document.execCommand('insertText', false, {json.dumps(text)});
-                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    
-                    // Trigger send button or Enter
+                    // Compatibile con React, Vue, e plain DOM
+                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                        input.tagName === 'INPUT' || input.tagName === 'TEXTAREA'
+                            ? window.HTMLInputElement.prototype
+                            : window.HTMLElement.prototype,
+                        'value'
+                    );
+
+                    if (input.tagName === 'INPUT' || input.tagName === 'TEXTAREA') {{
+                        if (nativeInputValueSetter && nativeInputValueSetter.set) {{
+                            nativeInputValueSetter.set.call(input, {json.dumps(text)});
+                        }} else {{
+                            input.value = {json.dumps(text)};
+                        }}
+                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }} else {{
+                        // contenteditable div
+                        document.execCommand('selectAll', false, null);
+                        document.execCommand('insertText', false, {json.dumps(text)});
+                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    }}
+
                     setTimeout(() => {{
+                        // Prima cerca un bottone Send
                         const btns = Array.from(document.querySelectorAll('button'));
                         const sendBtn = btns.find(b => {{
-                            const label = (b.getAttribute('aria-label') || '').toLowerCase();
-                            return (label.includes('send') || label.includes('invia')) && !b.disabled;
+                            const label = (b.getAttribute('aria-label') || b.textContent || '').toLowerCase();
+                            return (label.includes('send') || label.includes('invia') || label.includes('submit')) && !b.disabled;
                         }});
                         if (sendBtn) {{
+                            console.log('[CDP-Bridge] Clic su bottone Send:', sendBtn.getAttribute('aria-label') || sendBtn.textContent);
                             sendBtn.click();
                         }} else {{
+                            // Fallback: Enter key
+                            console.log('[CDP-Bridge] Nessun bottone Send, uso Enter key');
                             input.dispatchEvent(new KeyboardEvent('keydown', {{
-                                key: 'Enter',
-                                code: 'Enter',
-                                keyCode: 13,
-                                which: 13,
-                                bubbles: true,
-                                cancelable: true
+                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                                bubbles: true, cancelable: true
+                            }}));
+                            input.dispatchEvent(new KeyboardEvent('keyup', {{
+                                key: 'Enter', code: 'Enter', keyCode: 13, which: 13,
+                                bubbles: true, cancelable: true
                             }}));
                         }}
-                    }}, 80);
-                    return {{"ok": true}};
+                    }}, 100);
+
+                    return {{ok: true, selector: input.tagName + (input.className ? '.' + input.className.split(' ')[0] : '')}};
                 }})()
                 """
                 call_msg = {
@@ -88,13 +138,20 @@ class AntigravityBridge:
                     "method": "Runtime.evaluate",
                     "params": {
                         "expression": expr,
-                        "returnByValue": True
+                        "returnByValue": True,
+                        "awaitPromise": False
                     }
                 }
                 await cdp_ws.send(json.dumps(call_msg))
                 res = await cdp_ws.recv()
-                print(f"[CDP] Risultato iniezione: {res}")
-                return True
+                result = json.loads(res)
+                val = result.get("result", {}).get("result", {}).get("value", {})
+                if isinstance(val, dict) and val.get("ok"):
+                    print(f"[CDP] Iniezione riuscita su: {val.get('selector', 'N/A')}")
+                    return True
+                else:
+                    print(f"[CDP] Iniezione fallita: {val}")
+                    return False
         except Exception as err:
             print(f"[CDP] Errore durante iniezione CDP: {err}")
             return False
@@ -269,7 +326,7 @@ class AntigravityBridge:
                     await ws.send(json.dumps({
                         "type": "system",
                         "event": "pc_online",
-                        "session": "8b821246-0476-44f4-875d-18fbf98268f1",
+                        "session": "9c04195d-c1da-425d-871c-ff49882dd2bd",
                         "timestamp": int(time.time() * 1000)
                     }))
 
