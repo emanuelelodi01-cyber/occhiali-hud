@@ -77,6 +77,9 @@ extern "C" {
     pub fn getLocationName() -> String;
 
     #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn checkUpdateManually();
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
     pub fn drawRadarCanvas(
         canvas_id: &str,
         lat: f64,

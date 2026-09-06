@@ -574,6 +574,110 @@ window.RayNeoHUD = {
   // Legacy wrapper for backwards compatibility
   drawRadarCanvas(canvasId, lat, lon, heading, zoom, speed, theme) {
     this.updateTelemetry(lat, lon, heading, speed, zoom, theme);
+  },
+
+  // PWA Auto-Update Detection & User Prompt Banner
+  waitingWorker: null,
+
+  initPwaUpdateWatcher() {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      // Periodic check for new Dokploy builds every 45 seconds
+      setInterval(() => {
+        reg.update().catch(() => {});
+      }, 45000);
+
+      // Check when user returns to app
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          reg.update().catch(() => {});
+        }
+      });
+
+      // 1. Worker already waiting from prior background fetch
+      if (reg.waiting) {
+        this.showUpdatePrompt(reg.waiting);
+      }
+
+      // 2. New worker discovered and downloaded
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            this.showUpdatePrompt(newWorker);
+          }
+        });
+      });
+    }).catch((err) => {
+      console.warn('[PWA] Registration error:', err);
+    });
+
+    // Seamlessly reload page once new worker takes control
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true;
+        window.location.reload();
+      }
+    });
+  },
+
+  showUpdatePrompt(worker) {
+    this.waitingWorker = worker;
+    let banner = document.getElementById('pwa-update-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'pwa-update-banner';
+      banner.className = 'pwa-update-banner';
+      banner.innerHTML = `
+        <div class="pwa-update-pulse"></div>
+        <div class="pwa-update-content">
+          <div class="pwa-update-title">⚡ NUOVO AGGIORNAMENTO DISPONIBILE</div>
+          <div class="pwa-update-desc">Nuovo deploy completato. Ricarica per applicare le novità.</div>
+        </div>
+        <div class="pwa-update-actions">
+          <button id="pwa-apply-update-btn" class="pwa-btn-update">AGGIORNA ORA</button>
+          <button id="pwa-dismiss-btn" class="pwa-btn-dismiss">DOPO</button>
+        </div>
+      `;
+      document.body.appendChild(banner);
+
+      document.getElementById('pwa-apply-update-btn').addEventListener('click', () => {
+        if (this.waitingWorker) {
+          this.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        } else {
+          window.location.reload();
+        }
+      });
+
+      document.getElementById('pwa-dismiss-btn').addEventListener('click', () => {
+        banner.style.display = 'none';
+      });
+    } else {
+      banner.style.display = 'flex';
+    }
+  },
+
+  checkUpdateManually() {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg) {
+          reg.update().then(() => {
+            if (!reg.waiting && !reg.installing) {
+              alert('Nessun aggiornamento in attesa. Stai già usando l\'ultima versione live!');
+            }
+          }).catch((e) => {
+            alert('Errore controllo aggiornamenti: ' + e);
+          });
+        } else {
+          alert('Service worker non ancora registrato.');
+        }
+      });
+    } else {
+      alert('Service Worker non supportato dal browser.');
+    }
   }
 };
 
@@ -583,6 +687,7 @@ if (typeof document !== 'undefined') {
     window.RayNeoHUD.startAnimationLoop('gta-radar-canvas');
     window.RayNeoHUD.initBattery();
     window.RayNeoHUD.initOrientationListener();
+    window.RayNeoHUD.initPwaUpdateWatcher();
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initHUD);

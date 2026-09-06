@@ -630,3 +630,106 @@ html, body {
     box-sizing: border-box;
   }
 }
+
+/* PWA Update Notification Banner - GTA VI Neon Style */
+.pwa-update-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(8, 14, 22, 0.95);
+  border: 1.5px solid #ff007f;
+  border-radius: 8px;
+  box-shadow: 0 0 25px rgba(255, 0, 127, 0.5), inset 0 0 15px rgba(0, 240, 255, 0.2);
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 99999;
+  font-family: 'Rajdhani', 'Orbitron', sans-serif;
+  color: #ffffff;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: pwaSlideIn 0.35s ease-out;
+  max-width: 90vw;
+  box-sizing: border-box;
+}
+
+@keyframes pwaSlideIn {
+  from { top: -80px; opacity: 0; }
+  to { top: 16px; opacity: 1; }
+}
+
+.pwa-update-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff007f;
+  box-shadow: 0 0 10px #ff007f;
+  animation: pulse-star 0.8s infinite alternate;
+  flex-shrink: 0;
+}
+
+.pwa-update-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pwa-update-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  color: #00f0ff;
+  letter-spacing: 1px;
+}
+
+.pwa-update-desc {
+  font-size: 11px;
+  color: #cccccc;
+}
+
+.pwa-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.pwa-btn-update {
+  background: linear-gradient(90deg, #ff007f, #ff2a85);
+  border: 1px solid #ff007f;
+  color: #ffffff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(255, 0, 127, 0.6);
+  transition: transform 0.15s ease, filter 0.15s ease;
+  white-space: nowrap;
+}
+
+.pwa-btn-update:hover {
+  transform: scale(1.05);
+  filter: brightness(1.2);
+}
+
+.pwa-btn-dismiss {
+  background: rgba(20, 25, 30, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #aaaaaa;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 10px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pwa-btn-dismiss:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+}

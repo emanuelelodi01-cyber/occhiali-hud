@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use crate::gps::{enableWakeLock, requestOrientation, toggleFullscreen, HudTheme};
+use crate::gps::{checkUpdateManually, enableWakeLock, requestOrientation, toggleFullscreen, HudTheme};
 
 #[component]
 pub fn SettingsModal(
@@ -151,6 +151,12 @@ pub fn SettingsModal(
                         style: if is_simulating { "border-color: #ffcc00; color: #ffcc00;" } else { "" },
                         onclick: move |_| on_toggle_simulation.call(()),
                         if is_simulating { "MODE: SIMULATED (INDOOR TEST)" } else { "MODE: REAL GPS & SENSORS" },
+                    }
+                    button {
+                        class: "hud-btn",
+                        style: "border-color: #00f0ff; color: #00f0ff;",
+                        onclick: move |_| checkUpdateManually(),
+                        "🔄 VERIFICA AGGIORNAMENTI DEPLOY",
                     }
                 }
             }
