@@ -123,7 +123,7 @@ class AntigravityBridge:
         # Polling loop for new lines
         while self.is_running:
             await asyncio.sleep(0.5)
-            if not self.ws or self.ws.closed:
+            if not self.ws:
                 continue
 
             if not os.path.exists(self.transcript_path):
