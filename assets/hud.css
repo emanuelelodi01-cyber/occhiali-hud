@@ -743,6 +743,11 @@ html, body {
 }
 
 .hud-center-sight {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  color: inherit;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -750,10 +755,7 @@ html, body {
   align-items: center;
   cursor: pointer;
   z-index: 50;
-  touch-action: none;
-  -webkit-touch-callout: none;
-  -webkit-user-select: none;
-  user-select: none;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   width: 100%;
   max-width: 650px;

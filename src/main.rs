@@ -13,7 +13,7 @@ use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
 use components::subtitles::AiSubtitles;
 use gps::{
-    commsGetStateJson, commsInit, commsSetClientRole, getBatteryLevel, getHeading, getLocationName,
+    commsGetStateJson, commsInit, commsSetClientRole, commsToggleListening, getBatteryLevel, getHeading, getLocationName,
     isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
     CommsState, GpsData, HudTheme,
 };
@@ -293,17 +293,20 @@ fn App() -> Element {
                     theme: theme,
                 }
 
-                // Center Area: Open sightline for RayNeo Micro-OLED AR transparency & Blind-Touch PTT
-                div {
+                button {
+                    r#type: "button",
                     id: "hud-center-sight",
                     class: if comms_state().is_listening { "hud-center-sight is-listening" } else { "hud-center-sight" },
+                    onclick: move |_| {
+                        commsToggleListening();
+                    },
                     div { class: "hud-crosshair" }
                     div {
                         class: "hud-sight-label",
                         if comms_state().is_listening {
-                            "🔴 IN ASCOLTO... RILASCIA O TOCCA PER INVIARE"
+                            "🔴 IN ASCOLTO... (Tocca per inviare)"
                         } else {
-                            "🎙️ TIENI PREMUTO PER PARLARE"
+                            "🎙️ PARLA CON ANTIGRAVITY (Tocca qui)"
                         }
                     }
                 }
