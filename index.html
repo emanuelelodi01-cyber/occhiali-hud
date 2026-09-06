@@ -10,14 +10,14 @@
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="dark">
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/hud.css?v=20260906-v16">
-  <script src="/hud-interop.js?v=20260906-v16"></script>
+  <link rel="stylesheet" href="/hud.css?v=20260906-v17">
+  <script src="/hud-interop.js?v=20260906-v17"></script>
   <script>
     // Flush stale caches on iPhone
     if ('caches' in window) {
       caches.keys().then(function(keys) {
         for (var i = 0; i < keys.length; i++) {
-          if (!keys[i].includes('2026.09.06-v16')) {
+          if (!keys[i].includes('2026.09.06-v17')) {
             caches.delete(keys[i]);
           }
         }

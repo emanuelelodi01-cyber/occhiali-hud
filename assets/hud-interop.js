@@ -1696,56 +1696,60 @@ if (typeof document !== 'undefined') {
     } catch(e) {}
   };
 
-  // Pure 3D Touch / Haptic Touch Engine (Synchronous Taptic Engine Trigger)
+  // Pure 3D Touch / Haptic Touch Engine (Normal click completely disabled!)
   const bindPttElement = (btn) => {
     if (!btn || btn._pttBound) return;
     btn._pttBound = true;
 
     let isRecording = false;
-    let pressStartTime = 0;
+    let hapticTimer = null;
 
-    // Direct synchronous user gesture on touch down
+    // User touches screen: start 3D Touch pressure buildup
     const handlePressDown = (e) => {
       unlockAudioEngine();
       initIosHaptics();
-      pressStartTime = Date.now();
-      btn.classList.add('is-pressing');
-      btn.classList.add('is-listening');
+      isRecording = false;
+      btn.classList.add('is-priming');
 
-      // SYNCHRONOUS TAPTIC ENGINE TRIGGER (Direct trusted event context)
-      triggerTapticEngine('heavy');
-      playTactileClick(900, 0.03);
+      if (hapticTimer) clearTimeout(hapticTimer);
 
-      const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
-      if (comms && !comms.isListening) {
-        comms.stopSpeaking();
-        comms.startRecording();
-        isRecording = true;
-      }
+      // 350ms deliberate 3D Touch threshold
+      hapticTimer = setTimeout(() => {
+        btn.classList.remove('is-priming');
+        btn.classList.add('is-listening');
+
+        // Physical Taptic Engine Buzz + Audio Micro-Click
+        triggerTapticEngine('heavy');
+        playTactileClick(900, 0.03);
+
+        const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+        if (comms && !comms.isListening) {
+          comms.stopSpeaking();
+          comms.startRecording();
+          isRecording = true;
+        }
+      }, 350);
     };
 
-    // Direct synchronous user gesture on touch release
+    // User lifts finger: cancel if quick tap, send if 3D Touch hold
     const handlePressRelease = (e) => {
-      btn.classList.remove('is-pressing');
-      btn.classList.remove('is-listening');
+      btn.classList.remove('is-priming');
 
-      const elapsed = Date.now() - pressStartTime;
-      const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+      if (hapticTimer) {
+        clearTimeout(hapticTimer);
+        hapticTimer = null;
+      }
 
-      // SYNCHRONOUS TAPTIC ENGINE RELEASE CLICK
-      triggerTapticEngine('medium');
-      playTactileClick(650, 0.025);
-
-      if (isRecording && comms) {
+      if (isRecording) {
         isRecording = false;
-        if (elapsed < 280) {
-          // Tap was too quick (< 280ms) - abort without sending
-          console.log('[PTT] Tocco troppo breve (< 280ms), annullato.');
-          comms.stopRecording();
-          comms.lastUserMessage = '⚡ Tieni premuto per parlare';
-          comms.notify();
-        } else {
-          // Intentional 3D / Haptic Touch hold - send audio!
+        btn.classList.remove('is-listening');
+
+        // Physical Taptic Release Click + Audio Micro-Click
+        triggerTapticEngine('medium');
+        playTactileClick(650, 0.025);
+
+        const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+        if (comms && comms.isListening) {
           comms.stopRecording();
         }
       }
@@ -1758,6 +1762,7 @@ if (typeof document !== 'undefined') {
     btn.addEventListener('touchcancel', handlePressRelease);
 
     // Completely swallow ALL regular clicks!
+    // Normal tap or click will NEVER activate anything.
     btn.addEventListener('click', (e) => {
       e.stopImmediatePropagation();
       e.preventDefault();

@@ -794,16 +794,25 @@ html, body {
   box-shadow: 0 0 18px rgba(255, 42, 85, 0.6);
 }
 
-.hud-center-sight.is-pressing {
-  transform: translate(-50%, -50%) scale(0.92) !important;
-  transition: transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1) !important;
-  filter: brightness(1.35);
+.hud-center-sight.is-priming {
+  transform: translate(-50%, -50%) scale(0.90) !important;
+  transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1) !important;
+  box-shadow: 0 0 35px rgba(0, 229, 255, 0.9), inset 0 0 20px rgba(0, 229, 255, 0.5) !important;
+  filter: brightness(1.5) !important;
 }
 
-#controller-ptt-btn.is-pressing {
-  transform: scale(0.95) !important;
-  transition: transform 0.12s ease !important;
-  filter: brightness(1.25);
+.hud-center-sight.is-listening {
+  transform: translate(-50%, -50%) scale(1.06) !important;
+  transition: transform 0.2s ease !important;
+  box-shadow: 0 0 45px rgba(255, 42, 85, 0.95), inset 0 0 25px rgba(255, 42, 85, 0.6) !important;
+  animation: hud-sight-pulse 0.9s infinite alternate !important;
+}
+
+#controller-ptt-btn.is-priming {
+  transform: scale(0.94) !important;
+  transition: transform 0.35s ease !important;
+  box-shadow: 0 0 25px rgba(0, 229, 255, 0.8) !important;
+  filter: brightness(1.3) !important;
 }
 
 
