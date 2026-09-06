@@ -29,8 +29,8 @@ fn App() -> Element {
     let mut show_settings = use_signal(|| false);
     let mut clock_str = use_signal(|| "00:00:00".to_string());
 
-    // Clock update & GPS/Heading polling loop
-    use_effect(move || {
+    // Clock update & GPS/Heading polling loop using use_hook to run ONCE on mount
+    use_hook(move || {
         wasm_bindgen_futures::spawn_local(async move {
             let mut tick_counter: u64 = 0;
             loop {
@@ -46,8 +46,8 @@ fn App() -> Element {
                     clock_str.set(format!("{:02}:{:02}:{:02}", hours, minutes, seconds));
                 }
 
-                // Check simulation vs real sensors
-                let mut data = gps_data();
+                // Check simulation vs real sensors without reactive dependency
+                let mut data = gps_data.peek().clone();
                 if data.is_simulated {
                     // Smooth simulated drive around Los Santos / Milan
                     let sim_time = (tick_counter as f64) * 0.05;
@@ -62,28 +62,40 @@ fn App() -> Element {
                     data.accuracy = 4.2;
                     gps_data.set(data);
                 } else {
-                    // Real hardware heading from RayNeoHUD bridge
+                    // Real hardware heading & battery from RayNeoHUD bridge
                     let sensor_hdg = getHeading();
-                    if sensor_hdg > 0.0 {
+                    let mut changed = false;
+                    if sensor_hdg > 0.0 && (sensor_hdg - data.heading).abs() > 0.2 {
                         data.heading = sensor_hdg;
+                        changed = true;
                     }
-                    data.battery_level = getBatteryLevel();
-                    data.is_charging = isBatteryCharging();
-                    gps_data.set(data);
+                    let bat = getBatteryLevel();
+                    if (bat - data.battery_level).abs() > 0.02 {
+                        data.battery_level = bat;
+                        changed = true;
+                    }
+                    let chg = isBatteryCharging();
+                    if chg != data.is_charging {
+                        data.is_charging = chg;
+                        changed = true;
+                    }
+                    if changed {
+                        gps_data.set(data);
+                    }
                 }
             }
         });
     });
 
-    // Setup Geolocation watcher on mount
-    use_effect(move || {
+    // Setup Geolocation watcher on mount using use_hook
+    use_hook(move || {
         if let Some(window) = web_sys::window() {
             let navigator = window.navigator();
             if let Ok(geolocation) = navigator.geolocation() {
                 let success_callback = {
                     Closure::<dyn FnMut(web_sys::Position)>::new(move |pos: web_sys::Position| {
                         let coords = pos.coords();
-                        let mut current = gps_data();
+                        let mut current = gps_data.peek().clone();
                         if !current.is_simulated {
                             current.latitude = coords.latitude();
                             current.longitude = coords.longitude();
@@ -170,7 +182,7 @@ fn App() -> Element {
 
             // Top Bar
             div { class: "hud-top-bar",
-                div { style: "width: 180px;" } // spacer to balance layout
+                div { class: "hud-top-spacer" }
                 Compass { heading: cur_gps.heading }
                 Header {
                     time_str: clock_str(),

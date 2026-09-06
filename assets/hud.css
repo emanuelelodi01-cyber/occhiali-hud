@@ -41,10 +41,11 @@ html, body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: var(--margin-y) var(--margin-x);
+  padding: env(safe-area-inset-top, var(--margin-y)) env(safe-area-inset-right, var(--margin-x)) env(safe-area-inset-bottom, var(--margin-y)) env(safe-area-inset-left, var(--margin-x));
   transform: scale(var(--hud-scale));
   transform-origin: center center;
   transition: transform 0.2s ease;
+  box-sizing: border-box;
 }
 
 /* Top Bar: Compass Tape + Location + Wanted Stars */
@@ -55,6 +56,10 @@ html, body {
   width: 100%;
   z-index: 10;
   pointer-events: none;
+}
+
+.hud-top-spacer {
+  width: 180px;
 }
 
 /* Compass Ribbon (Center Top) */
@@ -489,4 +494,53 @@ html, body {
   border-color: var(--hud-primary);
   background: rgba(0, 255, 136, 0.2);
   color: var(--hud-primary);
+}
+
+/* Responsive optimization for mobile / portrait screens */
+@media (max-width: 768px), (orientation: portrait) {
+  .hud-top-spacer {
+    display: none;
+  }
+
+  .compass-container {
+    padding: 3px 8px;
+  }
+
+  .compass-tape {
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+
+  .hud-clock {
+    font-size: 20px;
+  }
+
+  .hud-location-name {
+    font-size: 12px;
+  }
+
+  .gta-radar-canvas-box {
+    width: 160px;
+    height: 160px;
+  }
+
+  .gta-status-bars {
+    width: 160px;
+  }
+
+  .speed-number {
+    font-size: 40px;
+  }
+
+  .speed-rev-bar {
+    width: 110px;
+  }
+
+  .hud-gps-telemetry {
+    font-size: 9px;
+  }
+
+  .hud-bottom-bar {
+    gap: 8px;
+  }
 }

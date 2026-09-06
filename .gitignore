@@ -2,3 +2,10 @@
 **/*.rs.bk
 .DS_Store
 Thumbs.db
+node_modules/
+edgetemp/
+*.png
+*.jpg
+capture_shot.js
+test_devtools.js
+dom.html
