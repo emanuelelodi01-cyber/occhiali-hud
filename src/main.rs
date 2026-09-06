@@ -13,7 +13,7 @@ use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
 use components::subtitles::AiSubtitles;
 use gps::{
-    commsGetStateJson, commsInit, commsSetClientRole, commsToggleListening, getBatteryLevel, getHeading, getLocationName,
+    commsGetStateJson, commsInit, commsSetClientRole, commsToggleListening, commsToggleTts, getBatteryLevel, getHeading, getLocationName,
     isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
     CommsState, GpsData, HudTheme,
 };
@@ -268,6 +268,14 @@ fn App() -> Element {
                         class: "hud-btn",
                         onclick: move |_| toggleFullscreen(),
                         "⛶ OLED",
+                    }
+                    button {
+                        class: if comms_state().tts_enabled { "hud-btn hud-btn-active" } else { "hud-btn" },
+                        title: "Attiva o disattiva la lettura vocale dei messaggi",
+                        onclick: move |_| {
+                            commsToggleTts();
+                        },
+                        if comms_state().tts_enabled { "🔊 VOCE ON" } else { "🔇 MUTO" }
                     }
                 }
 

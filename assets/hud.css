@@ -138,35 +138,6 @@ html, body {
   100% { transform: scale(1.15); opacity: 1; }
 }
 
-/* Center Area (Empty to preserve real-world vision through RayNeo AR) */
-.hud-center-sight {
-  flex: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  pointer-events: none;
-}
-
-/* Subtle crosshair in center (toggleable) */
-.hud-crosshair {
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid rgba(0, 255, 136, 0.25);
-  border-radius: 50%;
-  position: relative;
-}
-
-.hud-crosshair::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  background: rgba(0, 255, 136, 0.4);
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-}
 
 /* Bottom Bar: Minimap Radar (Left) + Telemetry / Speed (Right) */
 .hud-bottom-bar {
@@ -761,6 +732,7 @@ html, body {
   max-width: 650px;
   margin: 0 auto;
   gap: 12px;
+  pointer-events: auto !important;
 }
 
 .hud-crosshair {

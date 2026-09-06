@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use crate::gps::{CommsState, HudTheme};
+use crate::gps::{commsToggleTts, CommsState, HudTheme};
 
 #[component]
 pub fn AiSubtitles(
@@ -77,10 +77,24 @@ pub fn AiSubtitles(
                         }
                     }
 
-                    // Live Status Pill
+                    // Live Status Pill & Quick Mute Button
                     div {
-                        style: "font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 1px; color: {status_color}; text-shadow: 0 0 8px {status_color};",
-                        "{status_text}"
+                        style: "display: flex; align-items: center; gap: 8px;",
+                        button {
+                            onclick: move |_| {
+                                commsToggleTts();
+                            },
+                            style: if comms.tts_enabled {
+                                "background: rgba(0, 229, 255, 0.15); border: 1px solid #00e5ff; border-radius: 4px; padding: 2px 8px; color: #00e5ff; font-size: 11px; font-weight: 800; cursor: pointer; pointer-events: auto;"
+                            } else {
+                                "background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; padding: 2px 8px; color: rgba(255, 255, 255, 0.4); font-size: 11px; font-weight: 700; cursor: pointer; pointer-events: auto;"
+                            },
+                            if comms.tts_enabled { "🔊 VOCE ON" } else { "🔇 MUTO" }
+                        }
+                        div {
+                            style: "font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 1px; color: {status_color}; text-shadow: 0 0 8px {status_color};",
+                            "{status_text}"
+                        }
                     }
                 }
 

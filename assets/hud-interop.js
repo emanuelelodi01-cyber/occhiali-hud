@@ -1545,4 +1545,70 @@ if (typeof document !== 'undefined') {
   } else {
     initHUD();
   }
+
+  // Audio Engine Unlocker for iOS Safari
+  const unlockAudioEngine = () => {
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.resume();
+        const dummy = new SpeechSynthesisUtterance('');
+        dummy.volume = 0.01;
+        window.speechSynthesis.speak(dummy);
+      }
+    } catch(e) {}
+  };
+  document.addEventListener('touchstart', unlockAudioEngine, { passive: true, once: true });
+  document.addEventListener('click', unlockAudioEngine, { passive: true, once: true });
+
+  // 3D Touch / Haptic Touch Hold-to-Talk for #hud-center-sight
+  let pressTimer = null;
+  let isHoldActive = false;
+
+  const bindCenterSight = () => {
+    const btn = document.getElementById('hud-center-sight');
+    if (!btn || btn._hapticTouchBound) return;
+    btn._hapticTouchBound = true;
+
+    btn.addEventListener('pointerdown', (e) => {
+      unlockAudioEngine();
+      isHoldActive = false;
+
+      // 260ms threshold for 3D/Haptic Touch hold
+      pressTimer = setTimeout(() => {
+        const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+        if (comms && !comms.isListening) {
+          isHoldActive = true;
+          comms.stopSpeaking();
+          comms.startRecording();
+          try { if (navigator.vibrate) navigator.vibrate(45); } catch(err){}
+        }
+      }, 260);
+    });
+
+    const handlePointerRelease = (e) => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
+      if (!comms) return;
+
+      if (isHoldActive) {
+        isHoldActive = false;
+        if (comms.isListening) {
+          comms.stopRecording();
+          try { if (navigator.vibrate) navigator.vibrate(25); } catch(err){}
+        }
+      }
+    };
+
+    btn.addEventListener('pointerup', handlePointerRelease);
+    btn.addEventListener('pointercancel', handlePointerRelease);
+  };
+
+  const observer = new MutationObserver(() => {
+    bindCenterSight();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  setTimeout(bindCenterSight, 500);
 }
