@@ -163,7 +163,7 @@ pub fn CommsWidget(
                                 "flex: 2; background: rgba(0, 255, 136, 0.15); border: 1px solid rgba(0, 255, 136, 0.6); border-radius: 8px; padding: 8px 12px; color: #00ff88; font-weight: 800; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;"
                             },
                             if comms.is_listening {
-                                "🔴 REGISTRAZIONE..."
+                                "🔴 IN ASCOLTO... (Tocca per inviare)"
                             } else {
                                 "🎙️ PARLA (PTT)"
                             }

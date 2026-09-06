@@ -958,11 +958,9 @@ window.RayNeoHUD = {
       this.recognition = rec;
     },
 
-    async toggleListening() {
-      // Start silent audio loop to lock MediaSession hardware button handlers
-      if (this.silentAudio && this.silentAudio.paused) {
-        try { await this.silentAudio.play(); } catch (e) {}
-      }
+    toggleListening() {
+      // Haptic feedback for tactile feel
+      try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
 
       if (this.isListening) {
         if (this.recognition) {
@@ -973,44 +971,36 @@ window.RayNeoHUD = {
         return false;
       }
 
-      // Stop any speech output
+      // Stop speech output so mic does not hear assistant
       this.stopSpeaking();
 
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRec) {
-        this.lastUserMessage = '⚠️ Microfono WebKit non disponibile in questa modalità PWA. Usa Safari direttamente o i pulsanti rapidi.';
-        this.notify();
-        return false;
-      }
-
-      // Explicitly request microphone stream to unlock iOS permissions
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          stream.getTracks().forEach(t => t.stop());
-        }
-      } catch (permErr) {
-        console.warn('[Comms] Permesso microfono fallito:', permErr);
-        this.lastUserMessage = `⚠️ Permesso microfono negato: ${permErr.name || permErr.message || permErr}`;
-        this.isListening = false;
-        this.notify();
-        return false;
-      }
-
-      // Fresh instance to avoid iOS speech recognition stale state
-      try {
-        if (this.recognition) {
-          try { this.recognition.abort(); } catch (e) {}
-        }
+      if (!this.recognition) {
         this.initSpeechRecognition();
+      }
+
+      if (!this.recognition) {
+        this.lastUserMessage = '⚠️ Riconoscimento vocale non supportato su questo browser.';
+        this.notify();
+        return false;
+      }
+
+      try {
         this.recognition.start();
         this.isListening = true;
         this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
       } catch (err) {
         console.warn('[Comms] Errore start riconoscimento:', err);
-        this.lastUserMessage = `⚠️ Errore avvio microfono: ${err.message || err}`;
-        this.isListening = false;
+        try {
+          this.initSpeechRecognition();
+          this.recognition.start();
+          this.isListening = true;
+          this.lastUserMessage = '🎙️ In ascolto... Parla ora!';
+        } catch (e2) {
+          this.lastUserMessage = '⚠️ Errore microfono: ' + (e2.message || err.message || err);
+          this.isListening = false;
+        }
       }
+
       this.notify();
       return this.isListening;
     },
