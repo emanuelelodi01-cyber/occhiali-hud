@@ -360,6 +360,13 @@ window.RayNeoHUD = {
   renderRadarFrame(canvasId) {
     const canvas = document.getElementById(canvasId || 'gta-radar-canvas');
     if (!canvas) return;
+
+    // Hide initial splash loading screen once HUD starts rendering
+    const loader = document.getElementById('hud-loading');
+    if (loader && loader.style.display !== 'none') {
+      loader.style.display = 'none';
+    }
+
     const ctx = canvas.getContext('2d');
     const w = canvas.width;
     const h = canvas.height;
