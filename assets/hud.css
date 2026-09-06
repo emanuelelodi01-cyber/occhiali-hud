@@ -498,49 +498,99 @@ html, body {
 
 /* Responsive optimization for mobile / portrait screens */
 @media (max-width: 768px), (orientation: portrait) {
+  .rayneo-hud-root {
+    padding: calc(env(safe-area-inset-top, 12px) + 6px) 10px calc(env(safe-area-inset-bottom, 12px) + 6px) 10px;
+  }
+
   .hud-top-spacer {
     display: none;
   }
 
+  .hud-quick-actions {
+    position: static;
+    margin-bottom: 2px;
+    opacity: 0.6;
+  }
+
+  .hud-btn {
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+
   .compass-container {
-    padding: 3px 8px;
+    padding: 2px 6px;
   }
 
   .compass-tape {
-    font-size: 14px;
+    font-size: 12px;
     letter-spacing: 1px;
   }
 
-  .hud-clock {
-    font-size: 20px;
-  }
-
-  .hud-location-name {
-    font-size: 12px;
-  }
-
-  .gta-radar-canvas-box {
-    width: 160px;
-    height: 160px;
-  }
-
-  .gta-status-bars {
-    width: 160px;
-  }
-
-  .speed-number {
-    font-size: 40px;
-  }
-
-  .speed-rev-bar {
-    width: 110px;
-  }
-
-  .hud-gps-telemetry {
+  .compass-degrees {
     font-size: 9px;
   }
 
+  .hud-clock {
+    font-size: 18px;
+  }
+
+  .hud-location-name {
+    font-size: 11px;
+  }
+
+  .hud-wanted-stars {
+    font-size: 14px;
+    gap: 2px;
+  }
+
+  .gta-radar-canvas-box {
+    width: 135px;
+    height: 135px;
+    border-radius: 20px;
+  }
+
+  .gta-radar-canvas {
+    border-radius: 20px;
+  }
+
+  .gta-status-bars {
+    width: 135px;
+    gap: 2px;
+  }
+
+  .gta-bar-track {
+    height: 6px;
+  }
+
+  .gta-bar-labels {
+    font-size: 7.5px;
+  }
+
+  .speedometer-wrapper {
+    max-width: 145px;
+  }
+
+  .speed-number {
+    font-size: 32px;
+  }
+
+  .speed-unit {
+    font-size: 11px;
+  }
+
+  .speed-rev-bar {
+    width: 80px;
+    height: 4px;
+  }
+
+  .hud-gps-telemetry {
+    font-size: 8px;
+  }
+
   .hud-bottom-bar {
-    gap: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    width: 100%;
   }
 }
