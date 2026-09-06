@@ -1281,13 +1281,14 @@ window.RayNeoHUD = {
 
       const utterance = new SpeechSynthesisUtterance(clean);
       utterance.lang = 'it-IT';
-      utterance.rate = 1.05; // Slightly faster, natural pacing
+      utterance.rate = 1.05; // Natural pacing
       utterance.pitch = 1.0;
 
-      // Select natural Italian voice if available
-      const voices = window.speechSynthesis.getVoices();
-      const itVoice = voices.find(v => v.lang.startsWith('it') && (v.name.includes('Natural') || v.name.includes('Siri') || v.name.includes('Google') || v.name.includes('Alice')));
-      if (itVoice) utterance.voice = itVoice;
+      const bestVoice = this.getBestItalianVoice();
+      if (bestVoice) {
+        utterance.voice = bestVoice;
+        utterance.lang = bestVoice.lang || 'it-IT';
+      }
 
       utterance.onstart = () => {
         this.isSpeaking = true;
@@ -1299,6 +1300,45 @@ window.RayNeoHUD = {
       };
 
       window.speechSynthesis.speak(utterance);
+    },
+
+    getBestItalianVoice() {
+      if (!('speechSynthesis' in window)) return null;
+      const voices = window.speechSynthesis.getVoices() || [];
+      const itVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('it'));
+      if (itVoices.length === 0) return null;
+
+      // 1. Siri voice if installed / available on iOS
+      const siri = itVoices.find(v => 
+        (v.name && v.name.toLowerCase().includes('siri')) ||
+        (v.voiceURI && v.voiceURI.toLowerCase().includes('siri'))
+      );
+      if (siri) {
+        console.log('[TTS] Utilizzo voce Siri:', siri.name);
+        return siri;
+      }
+
+      // 2. Premium / Enhanced / Natural Apple voice
+      const enhanced = itVoices.find(v => 
+        (v.name && (v.name.includes('Enhanced') || v.name.includes('Premium') || v.name.includes('Natural') || v.name.includes('Migliorat'))) ||
+        (v.voiceURI && (v.voiceURI.includes('enhanced') || v.voiceURI.includes('premium')))
+      );
+      if (enhanced) {
+        console.log('[TTS] Utilizzo voce Enhanced/Premium:', enhanced.name);
+        return enhanced;
+      }
+
+      // 3. Apple quality Italian voices (Alice, Luca, Federica, Chiara)
+      const appleNamed = itVoices.find(v => 
+        v.name && (v.name.includes('Alice') || v.name.includes('Federica') || v.name.includes('Luca') || v.name.includes('Chiara'))
+      );
+      if (appleNamed) {
+        console.log('[TTS] Utilizzo voce Apple:', appleNamed.name);
+        return appleNamed;
+      }
+
+      // 4. Default or first available Italian voice
+      return itVoices.find(v => v.default) || itVoices[0];
     },
 
     stopSpeaking() {
@@ -1564,6 +1604,12 @@ if (typeof document !== 'undefined') {
     window.RayNeoHUD.initOrientationListener();
     window.RayNeoHUD.initPwaUpdateWatcher();
     if (window.RayNeoHUD.comms) window.RayNeoHUD.comms.init();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.getVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        window.speechSynthesis.getVoices();
+      };
+    }
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initHUD);
