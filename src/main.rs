@@ -306,15 +306,15 @@ fn App() -> Element {
                     id: "hud-center-sight",
                     class: if comms_state().is_listening { "hud-center-sight is-listening" } else { "hud-center-sight" },
                     onclick: move |_| {
-                        commsToggleListening();
+                        // Normal tap disabled: 3D Touch only!
                     },
                     div { class: "hud-crosshair" }
                     div {
                         class: "hud-sight-label",
                         if comms_state().is_listening {
-                            "🔴 IN ASCOLTO... (Tocca per inviare)"
+                            "🔴 3D TOUCH ATTIVO (Rilascia per inviare)"
                         } else {
-                            "🎙️ PARLA CON ANTIGRAVITY (Tocca qui)"
+                            "⚡ PREMI 3D TOUCH PER PARLARE"
                         }
                     }
                 }

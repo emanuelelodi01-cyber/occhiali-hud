@@ -1631,47 +1631,59 @@ if (typeof document !== 'undefined') {
   document.addEventListener('touchstart', unlockAudioEngine, { passive: true, once: true });
   document.addEventListener('click', unlockAudioEngine, { passive: true, once: true });
 
-  // Native iOS Taptic Engine Trigger via WebKit Switch + Cross-Platform Vibration
-  const triggerTapticEngine = (pattern = 'medium') => {
+  // Persistent hidden switch & label for iOS Taptic Engine
+  let hapticSwitch = null;
+  let hapticLabel = null;
+
+  const initIosHaptics = () => {
+    if (hapticLabel && document.body && document.body.contains(hapticLabel)) return;
     try {
-      const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      if (isIos) {
-        // Taptic Engine hardware trigger via iOS Safari/WebKit switch component
-        const switchEl = document.createElement('input');
-        switchEl.type = 'checkbox';
-        switchEl.setAttribute('switch', '');
-        switchEl.style.position = 'fixed';
-        switchEl.style.top = '-9999px';
-        switchEl.style.left = '-9999px';
-        switchEl.style.opacity = '0';
-        switchEl.style.pointerEvents = 'none';
-        document.body.appendChild(switchEl);
-        switchEl.click();
-        if (pattern === 'heavy') {
-          setTimeout(() => { try { switchEl.click(); } catch(e){} }, 90);
-        }
-        setTimeout(() => {
-          try { switchEl.remove(); } catch(e){}
-        }, 180);
-      } else if (navigator.vibrate) {
-        navigator.vibrate(pattern === 'heavy' ? [50, 40, 50] : 35);
+      if (!hapticSwitch) {
+        hapticSwitch = document.createElement('input');
+        hapticSwitch.type = 'checkbox';
+        hapticSwitch.setAttribute('switch', '');
+        hapticSwitch.id = 'ios-taptic-switch';
+        hapticSwitch.style.cssText = 'position: fixed; bottom: 0; right: 0; width: 1px; height: 1px; opacity: 0.01; z-index: -9999; pointer-events: auto;';
+        if (document.body) document.body.appendChild(hapticSwitch);
+      }
+      if (!hapticLabel) {
+        hapticLabel = document.createElement('label');
+        hapticLabel.htmlFor = 'ios-taptic-switch';
+        hapticLabel.style.cssText = 'position: fixed; bottom: 0; right: 0; width: 1px; height: 1px; opacity: 0.01; z-index: -9999; pointer-events: auto;';
+        if (document.body) document.body.appendChild(hapticLabel);
       }
     } catch(e) {}
   };
 
-  // 3D Touch & Haptic Touch Hold-To-Talk
+  const triggerTapticEngine = (pattern = 'medium') => {
+    initIosHaptics();
+    try {
+      if (hapticLabel) {
+        hapticLabel.click();
+        if (pattern === 'heavy') {
+          setTimeout(() => { try { hapticLabel.click(); } catch(e){} }, 75);
+        }
+      }
+    } catch (e) {}
+
+    try {
+      if (navigator.vibrate) {
+        navigator.vibrate(pattern === 'heavy' ? [50, 40, 50] : 35);
+      }
+    } catch (e) {}
+  };
+
+  // Pure 3D Touch / Haptic Touch Engine (Normal click completely disabled!)
   const bindPttElement = (btn) => {
     if (!btn || btn._pttBound) return;
     btn._pttBound = true;
 
     let isEngaged = false;
-    let suppressClick = false;
     let hapticTimer = null;
 
     const startRecordingSession = () => {
       if (isEngaged) return;
       isEngaged = true;
-      suppressClick = true;
       unlockAudioEngine();
       btn.classList.add('is-listening');
       btn.classList.remove('is-pressing');
@@ -1696,8 +1708,6 @@ if (typeof document !== 'undefined') {
       if (!isEngaged) return;
       isEngaged = false;
       btn.classList.remove('is-listening');
-      suppressClick = true;
-      setTimeout(() => { suppressClick = false; }, 400);
 
       // Taptic Engine Release Click!
       triggerTapticEngine('medium');
@@ -1708,31 +1718,30 @@ if (typeof document !== 'undefined') {
       }
     };
 
-    // User puts finger down: start Haptic Touch anticipation
-    const handlePressStart = (e) => {
+    // User touches screen: start 3D Touch pressure anticipation
+    btn.addEventListener('pointerdown', (e) => {
       unlockAudioEngine();
+      initIosHaptics();
       isEngaged = false;
       btn.classList.add('is-pressing');
 
       if (hapticTimer) clearTimeout(hapticTimer);
 
-      // 380ms deliberate Haptic Touch threshold (requires firm, intentional hold)
+      // 320ms deliberate deep press threshold
       hapticTimer = setTimeout(() => {
         startRecordingSession();
-      }, 380);
-    };
-
-    btn.addEventListener('pointerdown', handlePressStart);
+      }, 320);
+    });
 
     // If device supports real physical 3D Touch (iPhone 6s to XS)
     btn.addEventListener('touchforcechange', (e) => {
       const touch = e.touches && e.touches[0];
       if (!touch) return;
       const force = touch.force !== undefined ? touch.force : 0;
-      if (force >= 0.40) {
+      if (force >= 0.35) {
         if (hapticTimer) clearTimeout(hapticTimer);
         startRecordingSession();
-      } else if (force < 0.15 && isEngaged) {
+      } else if (force < 0.12 && isEngaged) {
         stopRecordingSession();
       }
     }, { passive: true });
@@ -1742,7 +1751,7 @@ if (typeof document !== 'undefined') {
       if (e.webkitForce >= 2) {
         if (hapticTimer) clearTimeout(hapticTimer);
         startRecordingSession();
-      } else if (e.webkitForce < 1.4 && isEngaged) {
+      } else if (e.webkitForce < 1.3 && isEngaged) {
         stopRecordingSession();
       }
     });
@@ -1753,14 +1762,12 @@ if (typeof document !== 'undefined') {
     btn.addEventListener('touchend', stopRecordingSession);
     btn.addEventListener('touchcancel', stopRecordingSession);
 
-    // Click handler:
-    // Swallow synthesized click after Haptic Touch
+    // Completely swallow ALL regular clicks!
+    // Normal tap/click will NEVER activate recording or behave like a normal button.
     btn.addEventListener('click', (e) => {
-      if (suppressClick || isEngaged) {
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        suppressClick = false;
-      }
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      return false;
     }, true);
   };
 

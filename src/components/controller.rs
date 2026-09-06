@@ -86,7 +86,7 @@ pub fn PhoneController(
                 button {
                     id: "controller-ptt-btn",
                     onclick: move |_| {
-                        commsToggleListening();
+                        // Normal tap disabled: 3D Touch only!
                     },
                     style: if comms.is_listening {
                         "width: 100%; height: 110px; background: linear-gradient(135deg, #ff1a40 0%, #b30024 100%); border: 2px solid #ff4d6d; border-radius: 16px; color: #ffffff; font-family: 'Orbitron', monospace; font-size: 15px; font-weight: 900; letter-spacing: 1px; cursor: pointer; box-shadow: 0 0 30px rgba(255, 26, 64, 0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s ease;"
@@ -95,9 +95,15 @@ pub fn PhoneController(
                     },
                     div {
                         style: "font-size: 26px;",
-                        if comms.is_listening { "🔴" } else { "🎙️" }
+                        if comms.is_listening { "🔴" } else { "⚡" }
                     }
-                    div { "{ptt_label}" }
+                    div {
+                        if comms.is_listening {
+                            "🔴 3D TOUCH ATTIVO (Rilascia per inviare)"
+                        } else {
+                            "⚡ PREMI 3D TOUCH PER PARLARE"
+                        }
+                    }
                     if comms.is_listening {
                         div {
                             style: "font-size: 11px; color: #ffccd5; font-family: 'Rajdhani', sans-serif; font-weight: 700;",
