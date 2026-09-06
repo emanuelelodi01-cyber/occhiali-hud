@@ -1,5 +1,5 @@
 // RayNeo GTA HUD - PWA Update-Aware Service Worker
-const SW_VERSION = '2026.09.06-v4';
+const SW_VERSION = '2026.09.06-v5';
 const CACHE_NAME = `rayneo-hud-cache-${SW_VERSION}`;
 
 self.addEventListener('install', (event) => {

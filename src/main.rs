@@ -13,7 +13,7 @@ use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
 use components::subtitles::AiSubtitles;
 use gps::{
-    commsGetStateJson, commsInit, commsSetClientRole, getBatteryLevel, getHeading, getLocationName,
+    commsGetStateJson, commsInit, commsSetClientRole, commsToggleListening, getBatteryLevel, getHeading, getLocationName,
     isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
     CommsState, GpsData, HudTheme,
 };
@@ -293,8 +293,12 @@ fn App() -> Element {
                     theme: theme,
                 }
 
-                // Center Area: Open sightline for RayNeo Micro-OLED AR transparency
-                div { class: "hud-center-sight",
+                // Center Area: Open sightline for RayNeo Micro-OLED AR transparency & Blind-Touch PTT
+                div {
+                    class: "hud-center-sight",
+                    onclick: move |_| {
+                        commsToggleListening();
+                    },
                     div { class: "hud-crosshair" }
                 }
 

@@ -1490,18 +1490,6 @@ window.commsGetClientRole = function() {
   return (window.RayNeoHUD && window.RayNeoHUD.comms) ? window.RayNeoHUD.comms.clientRole : 'hud';
 };
 
-window.commsStartProjector = function() {
-  return (window.RayNeoHUD && window.RayNeoHUD.projector)
-    ? window.RayNeoHUD.projector.startProjecting()
-    : false;
-};
-
-window.commsStopProjector = function() {
-  if (window.RayNeoHUD && window.RayNeoHUD.projector) {
-    window.RayNeoHUD.projector.stopProjecting();
-  }
-};
-
 window.commsGetStateJson = function() {
   try {
     return (window.RayNeoHUD && window.RayNeoHUD.comms)
@@ -1520,7 +1508,6 @@ if (typeof document !== 'undefined') {
     window.RayNeoHUD.initOrientationListener();
     window.RayNeoHUD.initPwaUpdateWatcher();
     if (window.RayNeoHUD.comms) window.RayNeoHUD.comms.init();
-    if (window.RayNeoHUD.projector) window.RayNeoHUD.projector.init();
   };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initHUD);

@@ -1,8 +1,7 @@
 use dioxus::prelude::*;
 use crate::gps::{
     commsSendHudCommand, commsSendMessage, commsSetClientRole,
-    commsStartProjector, commsStopProjector, commsToggleListening, commsToggleTts,
-    CommsState, HudTheme,
+    commsToggleListening, commsToggleTts, CommsState, HudTheme,
 };
 
 #[component]
@@ -14,7 +13,6 @@ pub fn PhoneController(
     let comms = state();
     let th = theme();
     let mut text_input = use_signal(String::new);
-    let mut is_projecting = use_signal(|| false);
 
     // Status pill
     let (status_text, status_color) = if !comms.connected {
@@ -60,55 +58,25 @@ pub fn PhoneController(
                         commsSetClientRole("hud");
                         on_switch_to_hud.call(());
                     },
-                    style: "background: rgba(0, 255, 136, 0.15); border: 1.5px solid {th.primary}; border-radius: 8px; padding: 8px 12px; color: {th.primary}; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 0 12px rgba(0, 255, 136, 0.2); display: flex; align-items: center; gap: 6px;",
-                    "🕶️ APRI HUD"
+                    style: "background: rgba(0, 255, 136, 0.2); border: 1.5px solid {th.primary}; border-radius: 8px; padding: 8px 14px; color: {th.primary}; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 0 12px rgba(0, 255, 136, 0.3); display: flex; align-items: center; gap: 6px;",
+                    "🕶️ APRI HUD 1080p"
                 }
             }
 
-            // Native External Screen Video Projector (YouTube Mode)
+            // Quick Guidance Card
             div {
-                style: "margin-bottom: 14px; background: linear-gradient(135deg, rgba(0, 229, 255, 0.12) 0%, rgba(0, 80, 160, 0.22) 100%); border: 1.5px solid #00e5ff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 0 18px rgba(0, 229, 255, 0.2);",
+                style: "margin-bottom: 14px; background: rgba(0, 229, 255, 0.08); border: 1px solid rgba(0, 229, 255, 0.3); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px;",
                 div {
-                    style: "display: flex; justify-content: space-between; align-items: center;",
-                    div {
-                        style: "display: flex; flex-direction: column; gap: 2px;",
-                        span {
-                            style: "font-family: 'Orbitron', monospace; font-size: 12px; font-weight: 900; letter-spacing: 0.5px; color: #00e5ff;",
-                            "📺 PROIEZIONE OCCHIALI (YOUTUBE)"
-                        }
-                        span {
-                            style: "font-size: 11px; color: rgba(255, 255, 255, 0.7); font-weight: 600;",
-                            "Proietta l'HUD sulle lenti e tieni il controller qui"
-                        }
-                    }
-                    button {
-                        onclick: move |_| {
-                            let curr = is_projecting();
-                            if !curr {
-                                commsStartProjector();
-                                is_projecting.set(true);
-                            } else {
-                                commsStopProjector();
-                                is_projecting.set(false);
-                            }
-                        },
-                        style: if is_projecting() {
-                            "background: #ff1a40; border: none; border-radius: 8px; padding: 8px 14px; color: #ffffff; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 800; cursor: pointer; box-shadow: 0 0 15px #ff1a40;"
-                        } else {
-                            "background: #00e5ff; border: none; border-radius: 8px; padding: 8px 14px; color: #000000; font-family: 'Orbitron', monospace; font-size: 11px; font-weight: 900; cursor: pointer; box-shadow: 0 0 15px #00e5ff;"
-                        },
-                        if is_projecting() { "⏹️ FERMA" } else { "▶️ PROIETTA" }
-                    }
+                    style: "font-size: 11px; font-weight: 800; color: #00e5ff;",
+                    "💡 OPZIONI DISPLAY PER I RAYNEO:"
                 }
-
-                // Live Video Stream Mount for Native iOS External Screen Player
                 div {
-                    id: "projector-player-mount",
-                    style: if is_projecting() {
-                        "width: 100%; height: 210px; background: #000000; border: 1.5px solid #00e5ff; border-radius: 10px; margin-top: 12px; overflow: hidden; box-shadow: 0 0 20px rgba(0, 229, 255, 0.3); display: block;"
-                    } else {
-                        "display: none;"
-                    },
+                    style: "font-size: 11px; color: rgba(255, 255, 255, 0.8); line-height: 1.4;",
+                    "• In Mirroring: tocca 'APRI HUD 1080p' e gira l'iPhone in Orizzontale (Landscape) per riempire al 100% le lenti 16:9!"
+                }
+                div {
+                    style: "font-size: 11px; color: rgba(255, 255, 255, 0.8); line-height: 1.4;",
+                    "• Con app 'External Display Browser': apri /hud sulle lenti e tieni /controller sul telefono."
                 }
             }
 

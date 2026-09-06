@@ -733,3 +733,45 @@ html, body {
   color: #ffffff;
   border-color: #ffffff;
 }
+
+/* RayNeo Air 4 Pro 16:9 Micro-OLED Optical Alignment */
+@media (orientation: landscape) {
+  .rayneo-hud-root {
+    max-width: 177.78vh; /* Locks exactly to 16:9 1080p FOV */
+    margin: 0 auto;
+  }
+}
+
+.hud-center-sight {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  z-index: 5;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-crosshair {
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  border-radius: 50%;
+  pointer-events: none;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.hud-crosshair::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 4px;
+  background: rgba(0, 229, 255, 0.6);
+  border-radius: 50%;
+}
+
