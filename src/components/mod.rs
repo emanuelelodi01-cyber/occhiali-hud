@@ -1,7 +1,9 @@
 pub mod comms;
 pub mod compass;
+pub mod controller;
 pub mod header;
 pub mod radar;
 pub mod settings;
 pub mod speedometer;
 pub mod status_bars;
+pub mod subtitles;

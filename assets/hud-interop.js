@@ -690,17 +690,138 @@ window.RayNeoHUD = {
     isListening: false,
     isSpeaking: false,
     recognition: null,
-    agentStatus: 'idle', // 'idle', 'thinking', 'tool_running', 'speaking'
+    agentStatus: 'idle', // 'idle', 'thinking', 'tool_running', 'speaking', 'transcribing'
     toolDetail: '',
     lastAgentMessage: 'In attesa di collegamento con la sessione PC...',
     lastUserMessage: '',
+    streamedSubtitle: 'In attesa di collegamento con la sessione PC...',
+    targetSubtitle: '',
+    typewriterInterval: null,
+    history: [],
+    clientRole: 'hud', // 'hud' or 'controller'
     listeners: new Set(),
 
+    detectClientRole() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const path = window.location.pathname.toLowerCase();
+        if (params.get('view') === 'controller' || params.get('client') === 'controller' || path.includes('/controller')) {
+          return 'controller';
+        }
+        if (params.get('view') === 'hud' || params.get('client') === 'hud' || path.includes('/hud')) {
+          return 'hud';
+        }
+        return localStorage.getItem('rayneo_client_role') || 'hud';
+      } catch (e) {
+        return 'hud';
+      }
+    },
+
+    setClientRole(role) {
+      if (role !== 'hud' && role !== 'controller') return;
+      this.clientRole = role;
+      try {
+        localStorage.setItem('rayneo_client_role', role);
+      } catch (e) {}
+      // Reconnect with new client role if changed
+      if (this.ws) {
+        this.ws.close();
+      }
+      this.connect();
+      this.notify();
+    },
+
+    setTargetSubtitle(text) {
+      const clean = (text || '').trim();
+      this.targetSubtitle = clean;
+      if (this.typewriterInterval) {
+        clearInterval(this.typewriterInterval);
+        this.typewriterInterval = null;
+      }
+      if (!clean) {
+        this.streamedSubtitle = '';
+        this.notify();
+        return;
+      }
+      let idx = 0;
+      // Dynamic typing speed: between 12ms and 30ms per step
+      const stepChars = clean.length > 300 ? 4 : 2;
+      const intervalMs = Math.max(12, Math.min(28, Math.floor(3500 / (clean.length || 1))));
+      this.typewriterInterval = setInterval(() => {
+        idx += stepChars;
+        if (idx >= clean.length) {
+          this.streamedSubtitle = clean;
+          clearInterval(this.typewriterInterval);
+          this.typewriterInterval = null;
+        } else {
+          this.streamedSubtitle = clean.slice(0, idx);
+        }
+        this.notify();
+      }, intervalMs);
+    },
+
+    addHistory(role, text) {
+      if (!text || !text.trim()) return;
+      this.history.push({
+        id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        role: role,
+        text: text.trim(),
+        timestamp: Date.now()
+      });
+      if (this.history.length > 35) {
+        this.history.shift();
+      }
+    },
+
+    sendHudCommand(command, payload = {}) {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        console.log('[Comms] Inviando comando remoto all\'HUD:', command, payload);
+        this.ws.send(JSON.stringify({
+          type: 'hud_command',
+          command: command,
+          payload: payload,
+          timestamp: Date.now()
+        }));
+      }
+    },
+
+    executeRemoteCommand(command, payload = {}) {
+      console.log('[Comms] Ricevuto comando remoto da Controller:', command, payload);
+      try {
+        if (command === 'set_map_mode') {
+          if (window.RayNeoHUD && window.RayNeoHUD.setMapMode) {
+            window.RayNeoHUD.setMapMode(payload.mode || 'satellite');
+          }
+        } else if (command === 'cycle_map_mode') {
+          if (window.RayNeoHUD && window.RayNeoHUD.cycleMapMode) {
+            window.RayNeoHUD.cycleMapMode();
+          }
+        } else if (command === 'toggle_camera') {
+          if (window.RayNeoHUD && window.RayNeoHUD.toggleCamera) {
+            window.RayNeoHUD.toggleCamera();
+          }
+        } else if (command === 'trigger_gps') {
+          if (window.RayNeoHUD && window.RayNeoHUD.triggerGpsFix) {
+            window.RayNeoHUD.triggerGpsFix();
+          }
+        } else if (command === 'clear_subtitles') {
+          this.lastAgentMessage = '';
+          this.setTargetSubtitle('');
+        } else if (command === 'replay_speech') {
+          if (this.lastAgentMessage) {
+            this.speak(this.lastAgentMessage);
+          }
+        } else if (command === 'toggle_tts') {
+          this.toggleTts();
+        }
+      } catch (err) {
+        console.warn('[Comms] Errore esecuzione comando remoto:', err);
+      }
+    },
+
     init() {
+      this.clientRole = this.detectClientRole();
       if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      this.wsUrl = `${protocol}//${host}/api/ws?client=hud`;
       this.connect();
       this.initMediaSession();
       this.initHardwareKeyListeners();
@@ -711,7 +832,6 @@ window.RayNeoHUD = {
       try {
         if (!('mediaSession' in navigator)) return;
         if (!this.silentAudio) {
-          // 0.5s silent audio loop to keep audio session alive for temple button events
           const silentWav = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
           this.silentAudio = new Audio(silentWav);
           this.silentAudio.loop = true;
@@ -741,7 +861,6 @@ window.RayNeoHUD = {
 
     initHardwareKeyListeners() {
       window.addEventListener('keydown', (e) => {
-        // Intercept RayNeo temple rocker, headphone remote, or keyboard shortcuts
         const triggerKeys = ['MediaPlayPause', 'MediaTrackNext', 'MediaTrackPrevious', 'AudioVolumeMute', 'F12', 'F9', 'F8'];
         if (triggerKeys.includes(e.code) || triggerKeys.includes(e.key)) {
           e.preventDefault();
@@ -776,12 +895,15 @@ window.RayNeoHUD = {
 
     connect() {
       try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        this.wsUrl = `${protocol}//${host}/api/ws?client=${this.clientRole}`;
         console.log('[Comms] Connessione a', this.wsUrl);
         this.ws = new WebSocket(this.wsUrl);
 
         this.ws.onopen = () => {
           this.connected = true;
-          console.log('[Comms] WebSocket connesso');
+          console.log('[Comms] WebSocket connesso come', this.clientRole);
           this.notify();
         };
 
@@ -799,7 +921,6 @@ window.RayNeoHUD = {
           this.pcOnline = false;
           this.ws = null;
           this.notify();
-          // Auto reconnect after 3s
           setTimeout(() => this.connect(), 3000);
         };
 
@@ -816,8 +937,12 @@ window.RayNeoHUD = {
       if (data.type === 'system') {
         if (data.event === 'welcome') {
           this.pcOnline = !!data.pcOnline;
-          if (data.lastMessage && data.lastMessage.content) {
-            this.lastAgentMessage = data.lastMessage.content;
+          if (data.history && Array.isArray(data.history)) {
+            this.history = data.history;
+          }
+          if (data.lastStatus) {
+            this.agentStatus = data.lastStatus.status || 'idle';
+            this.toolDetail = data.lastStatus.toolName ? `Tool: ${data.lastStatus.toolName}` : '';
           }
         } else if (data.event === 'pc_status') {
           this.pcOnline = !!data.online;
@@ -830,6 +955,8 @@ window.RayNeoHUD = {
         this.toolDetail = '';
         if (data.content) {
           this.lastAgentMessage = data.content;
+          this.addHistory('assistant', data.content);
+          this.setTargetSubtitle(data.content);
           if (this.ttsEnabled) {
             this.speak(data.content);
           }
@@ -837,7 +964,17 @@ window.RayNeoHUD = {
       } else if (data.type === 'transcription_result') {
         if (data.text) {
           this.lastUserMessage = data.text;
+          if (!data.text.startsWith('⚠️')) {
+            this.addHistory('user', data.text);
+          }
         }
+      } else if (data.type === 'user_message') {
+        if (data.text) {
+          this.lastUserMessage = data.text;
+          this.addHistory('user', data.text);
+        }
+      } else if (data.type === 'hud_command') {
+        this.executeRemoteCommand(data.command, data.payload || {});
       }
       this.notify();
     },
@@ -1041,7 +1178,11 @@ window.RayNeoHUD = {
         agentStatus: this.agentStatus,
         toolDetail: this.toolDetail,
         lastAgentMessage: this.lastAgentMessage,
-        lastUserMessage: this.lastUserMessage
+        lastUserMessage: this.lastUserMessage,
+        streamedSubtitle: this.streamedSubtitle || this.lastAgentMessage,
+        isTyping: !!this.typewriterInterval,
+        history: this.history,
+        clientRole: this.clientRole
       };
     }
   }
@@ -1072,6 +1213,24 @@ window.commsStopSpeaking = function() {
   if (window.RayNeoHUD && window.RayNeoHUD.comms) {
     window.RayNeoHUD.comms.stopSpeaking();
   }
+};
+
+window.commsSendHudCommand = function(cmd, payloadJson) {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    let payload = {};
+    try { payload = JSON.parse(payloadJson || '{}'); } catch(e) {}
+    window.RayNeoHUD.comms.sendHudCommand(cmd, payload);
+  }
+};
+
+window.commsSetClientRole = function(role) {
+  if (window.RayNeoHUD && window.RayNeoHUD.comms) {
+    window.RayNeoHUD.comms.setClientRole(role);
+  }
+};
+
+window.commsGetClientRole = function() {
+  return (window.RayNeoHUD && window.RayNeoHUD.comms) ? window.RayNeoHUD.comms.clientRole : 'hud';
 };
 
 window.commsGetStateJson = function() {

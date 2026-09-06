@@ -106,7 +106,24 @@ extern "C" {
     pub fn commsStopSpeaking();
 
     #[wasm_bindgen]
+    pub fn commsSendHudCommand(cmd: &str, payload_json: &str);
+
+    #[wasm_bindgen]
+    pub fn commsSetClientRole(role: &str);
+
+    #[wasm_bindgen]
+    pub fn commsGetClientRole() -> String;
+
+    #[wasm_bindgen]
     pub fn commsGetStateJson() -> String;
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub id: String,
+    pub role: String,
+    pub text: String,
+    pub timestamp: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -128,6 +145,14 @@ pub struct CommsState {
     pub last_agent_message: String,
     #[serde(rename = "lastUserMessage")]
     pub last_user_message: String,
+    #[serde(rename = "streamedSubtitle", default)]
+    pub streamed_subtitle: String,
+    #[serde(rename = "isTyping", default)]
+    pub is_typing: bool,
+    #[serde(default)]
+    pub history: Vec<ChatMessage>,
+    #[serde(rename = "clientRole", default)]
+    pub client_role: String,
 }
 
 impl Default for CommsState {
@@ -142,6 +167,10 @@ impl Default for CommsState {
             tool_detail: String::new(),
             last_agent_message: "In attesa di collegamento con la sessione PC...".to_string(),
             last_user_message: String::new(),
+            streamed_subtitle: "In attesa di collegamento con la sessione PC...".to_string(),
+            is_typing: false,
+            history: Vec::new(),
+            client_role: "hud".to_string(),
         }
     }
 }

@@ -5,13 +5,15 @@ mod gps;
 
 use components::comms::CommsWidget;
 use components::compass::Compass;
+use components::controller::PhoneController;
 use components::header::Header;
 use components::radar::Radar;
 use components::settings::SettingsModal;
 use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
+use components::subtitles::AiSubtitles;
 use gps::{
-    commsGetStateJson, commsInit, getBatteryLevel, getHeading, getLocationName,
+    commsGetStateJson, commsInit, commsSetClientRole, getBatteryLevel, getHeading, getLocationName,
     isBatteryCharging, isCameraRunning, toggleCamera, toggleFullscreen, triggerGpsFix,
     CommsState, GpsData, HudTheme,
 };
@@ -36,6 +38,28 @@ fn App() -> Element {
     let mut camera_active = use_signal(|| false);
     let mut comms_state = use_signal(CommsState::default);
     let comms_expanded = use_signal(|| false);
+
+    let mut current_view = use_signal(|| {
+        if let Some(window) = web_sys::window() {
+            if let Ok(pathname) = window.location().pathname() {
+                if pathname.contains("/controller") {
+                    return "controller".to_string();
+                }
+                if pathname.contains("/hud") {
+                    return "hud".to_string();
+                }
+            }
+            if let Ok(search) = window.location().search() {
+                if search.contains("view=controller") || search.contains("client=controller") {
+                    return "controller".to_string();
+                }
+                if search.contains("view=hud") || search.contains("client=hud") {
+                    return "hud".to_string();
+                }
+            }
+        }
+        "hud".to_string()
+    });
 
     // Clock update & GPS/Heading polling loop using use_hook to run ONCE on mount
     use_hook(move || {
@@ -189,116 +213,143 @@ fn App() -> Element {
         cur_theme.primary
     );
 
-    rsx! {
-        div {
-            class: "rayneo-hud-root",
-            style: "{root_style}",
-
-            // Quick action overlay
-            div { class: "hud-quick-actions",
-                button {
-                    class: "hud-btn",
-                    onclick: move |_| {
-                        let curr = show_settings();
-                        show_settings.set(!curr);
-                    },
-                    "⚙ SETUP",
-                }
-                button {
-                    class: if camera_active() { "hud-btn hud-btn-active" } else { "hud-btn" },
-                    title: "Attiva la fotocamera posteriore dell'iPhone per vedere il mondo reale",
-                    onclick: move |_| {
-                        toggleCamera();
-                        let active = isCameraRunning();
-                        camera_active.set(active);
-                    },
-                    if camera_active() { "📷 CAMERA ON" } else { "📷 CAMERA AR" }
-                }
-                button {
-                    class: "hud-btn",
-                    title: "Aggancia coordinate GPS reali ad alta precisione",
-                    onclick: move |_| triggerGpsFix(),
-                    "📍 GPS REALE",
-                }
-                button {
-                    class: "hud-btn",
-                    onclick: move |_| toggleFullscreen(),
-                    "⛶ OLED",
-                }
-            }
-
-            // Top Bar
-            div { class: "hud-top-bar",
-                div { class: "hud-top-spacer" }
-                Compass { heading: cur_gps.heading }
-                Header {
-                    time_str: clock_str(),
-                    location_name: cur_gps.location_name.clone(),
-                    wanted_stars: cur_gps.wanted_stars,
-                    on_toggle_stars: move |_| {
-                        let mut updated = gps_data();
-                        updated.wanted_stars = (updated.wanted_stars + 1) % 6;
-                        gps_data.set(updated);
-                    },
-                }
-            }
-
-            // Center Area: Open sightline for RayNeo Micro-OLED AR transparency
-            div { class: "hud-center-sight",
-                div { class: "hud-crosshair" }
-            }
-
-            // Bottom Bar: Minimap Radar (Left) + Speedometer (Right)
-            div { class: "hud-bottom-bar",
-                div { class: "gta6-radar-wrapper",
-                    Radar {
-                        latitude: cur_gps.latitude,
-                        longitude: cur_gps.longitude,
-                        heading: cur_gps.heading,
-                        speed_kmh: cur_gps.speed_kmh,
-                        theme: cur_theme.clone(),
-                    }
-                    StatusBars {
-                        battery_level: cur_gps.battery_level,
-                        is_charging: cur_gps.is_charging,
-                        accuracy: cur_gps.accuracy,
-                        speed_kmh: cur_gps.speed_kmh,
-                    }
-                }
-
-                Speedometer {
-                    speed_kmh: cur_gps.speed_kmh,
-                    altitude: cur_gps.altitude,
-                    latitude: cur_gps.latitude,
-                    longitude: cur_gps.longitude,
-                }
-            }
-
-            // Antigravity Voice & Hologram Comms Widget
-            CommsWidget {
+    if current_view() == "controller" {
+        rsx! {
+            PhoneController {
                 state: comms_state,
                 theme: theme,
-                is_expanded: comms_expanded,
+                on_switch_to_hud: move |_| {
+                    current_view.set("hud".to_string());
+                },
             }
+        }
+    } else {
+        rsx! {
+            div {
+                class: "rayneo-hud-root",
+                style: "{root_style}",
 
-            // Settings Modal
-            if show_settings() {
-                SettingsModal {
-                    margin_x: margin_x(),
-                    margin_y: margin_y(),
-                    scale: scale(),
-                    current_theme_name: theme_name,
-                    is_simulating: cur_gps.is_simulated,
-                    on_change_margin_x: move |val| margin_x.set(val),
-                    on_change_margin_y: move |val| margin_y.set(val),
-                    on_change_scale: move |val| scale.set(val),
-                    on_select_theme: move |th| theme.set(th),
-                    on_toggle_simulation: move |_| {
-                        let mut updated = gps_data();
-                        updated.is_simulated = !updated.is_simulated;
-                        gps_data.set(updated);
-                    },
-                    on_close: move |_| show_settings.set(false),
+                // Quick action overlay
+                div { class: "hud-quick-actions",
+                    button {
+                        class: "hud-btn",
+                        title: "Passa alla modalità Controller Telefono per iPhone",
+                        onclick: move |_| {
+                            commsSetClientRole("controller");
+                            current_view.set("controller".to_string());
+                        },
+                        "📱 CONTROLLER",
+                    }
+                    button {
+                        class: "hud-btn",
+                        onclick: move |_| {
+                            let curr = show_settings();
+                            show_settings.set(!curr);
+                        },
+                        "⚙ SETUP",
+                    }
+                    button {
+                        class: if camera_active() { "hud-btn hud-btn-active" } else { "hud-btn" },
+                        title: "Attiva la fotocamera posteriore dell'iPhone per vedere il mondo reale",
+                        onclick: move |_| {
+                            toggleCamera();
+                            let active = isCameraRunning();
+                            camera_active.set(active);
+                        },
+                        if camera_active() { "📷 CAMERA ON" } else { "📷 CAMERA AR" }
+                    }
+                    button {
+                        class: "hud-btn",
+                        title: "Aggancia coordinate GPS reali ad alta precisione",
+                        onclick: move |_| triggerGpsFix(),
+                        "📍 GPS REALE",
+                    }
+                    button {
+                        class: "hud-btn",
+                        onclick: move |_| toggleFullscreen(),
+                        "⛶ OLED",
+                    }
+                }
+
+                // Top Bar
+                div { class: "hud-top-bar",
+                    div { class: "hud-top-spacer" }
+                    Compass { heading: cur_gps.heading }
+                    Header {
+                        time_str: clock_str(),
+                        location_name: cur_gps.location_name.clone(),
+                        wanted_stars: cur_gps.wanted_stars,
+                        on_toggle_stars: move |_| {
+                            let mut updated = gps_data();
+                            updated.wanted_stars = (updated.wanted_stars + 1) % 6;
+                            gps_data.set(updated);
+                        },
+                    }
+                }
+
+                // Cinematic AR Subtitle Banner (Optimized center-top sightline for RayNeo glasses)
+                AiSubtitles {
+                    state: comms_state,
+                    theme: theme,
+                }
+
+                // Center Area: Open sightline for RayNeo Micro-OLED AR transparency
+                div { class: "hud-center-sight",
+                    div { class: "hud-crosshair" }
+                }
+
+                // Bottom Bar: Minimap Radar (Left) + Speedometer (Right)
+                div { class: "hud-bottom-bar",
+                    div { class: "gta6-radar-wrapper",
+                        Radar {
+                            latitude: cur_gps.latitude,
+                            longitude: cur_gps.longitude,
+                            heading: cur_gps.heading,
+                            speed_kmh: cur_gps.speed_kmh,
+                            theme: cur_theme.clone(),
+                        }
+                        StatusBars {
+                            battery_level: cur_gps.battery_level,
+                            is_charging: cur_gps.is_charging,
+                            accuracy: cur_gps.accuracy,
+                            speed_kmh: cur_gps.speed_kmh,
+                        }
+                    }
+
+                    Speedometer {
+                        speed_kmh: cur_gps.speed_kmh,
+                        altitude: cur_gps.altitude,
+                        latitude: cur_gps.latitude,
+                        longitude: cur_gps.longitude,
+                    }
+                }
+
+                // Antigravity Voice & Hologram Comms Widget (Collapsible fallback)
+                CommsWidget {
+                    state: comms_state,
+                    theme: theme,
+                    is_expanded: comms_expanded,
+                }
+
+                // Settings Modal
+                if show_settings() {
+                    SettingsModal {
+                        margin_x: margin_x(),
+                        margin_y: margin_y(),
+                        scale: scale(),
+                        current_theme_name: theme_name,
+                        is_simulating: cur_gps.is_simulated,
+                        on_change_margin_x: move |val| margin_x.set(val),
+                        on_change_margin_y: move |val| margin_y.set(val),
+                        on_change_scale: move |val| scale.set(val),
+                        on_select_theme: move |th| theme.set(th),
+                        on_toggle_simulation: move |_| {
+                            let mut updated = gps_data();
+                            updated.is_simulated = !updated.is_simulated;
+                            gps_data.set(updated);
+                        },
+                        on_close: move |_| show_settings.set(false),
+                    }
                 }
             }
         }

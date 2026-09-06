@@ -10,3 +10,5 @@ edgetemp2/
 capture_shot.js
 test_devtools.js
 dom.html
+__pycache__/
+*.pyc
