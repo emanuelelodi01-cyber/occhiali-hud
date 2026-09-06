@@ -1673,97 +1673,91 @@ if (typeof document !== 'undefined') {
     } catch (e) {}
   };
 
-  // Pure 3D Touch / Haptic Touch Engine (Normal click completely disabled!)
+  // Synthetic Tactical Audio Click (Haptic Audio Micro-Click)
+  let audioCtx = null;
+  const playTactileClick = (freq = 850, duration = 0.025) => {
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + duration);
+    } catch(e) {}
+  };
+
+  // Pure 3D Touch / Haptic Touch Engine (Synchronous Taptic Engine Trigger)
   const bindPttElement = (btn) => {
     if (!btn || btn._pttBound) return;
     btn._pttBound = true;
 
-    let isEngaged = false;
-    let hapticTimer = null;
+    let isRecording = false;
+    let pressStartTime = 0;
 
-    const startRecordingSession = () => {
-      if (isEngaged) return;
-      isEngaged = true;
+    // Direct synchronous user gesture on touch down
+    const handlePressDown = (e) => {
       unlockAudioEngine();
+      initIosHaptics();
+      pressStartTime = Date.now();
+      btn.classList.add('is-pressing');
       btn.classList.add('is-listening');
-      btn.classList.remove('is-pressing');
 
-      // Taptic Engine Haptic Buzz on phone!
+      // SYNCHRONOUS TAPTIC ENGINE TRIGGER (Direct trusted event context)
       triggerTapticEngine('heavy');
+      playTactileClick(900, 0.03);
 
       const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
       if (comms && !comms.isListening) {
         comms.stopSpeaking();
         comms.startRecording();
+        isRecording = true;
       }
     };
 
-    const stopRecordingSession = () => {
-      if (hapticTimer) {
-        clearTimeout(hapticTimer);
-        hapticTimer = null;
-      }
+    // Direct synchronous user gesture on touch release
+    const handlePressRelease = (e) => {
       btn.classList.remove('is-pressing');
-
-      if (!isEngaged) return;
-      isEngaged = false;
       btn.classList.remove('is-listening');
 
-      // Taptic Engine Release Click!
-      triggerTapticEngine('medium');
-
+      const elapsed = Date.now() - pressStartTime;
       const comms = window.RayNeoHUD && window.RayNeoHUD.comms;
-      if (comms && comms.isListening) {
-        comms.stopRecording();
+
+      // SYNCHRONOUS TAPTIC ENGINE RELEASE CLICK
+      triggerTapticEngine('medium');
+      playTactileClick(650, 0.025);
+
+      if (isRecording && comms) {
+        isRecording = false;
+        if (elapsed < 280) {
+          // Tap was too quick (< 280ms) - abort without sending
+          console.log('[PTT] Tocco troppo breve (< 280ms), annullato.');
+          comms.stopRecording();
+          comms.lastUserMessage = '⚡ Tieni premuto per parlare';
+          comms.notify();
+        } else {
+          // Intentional 3D / Haptic Touch hold - send audio!
+          comms.stopRecording();
+        }
       }
     };
 
-    // User touches screen: start 3D Touch pressure anticipation
-    btn.addEventListener('pointerdown', (e) => {
-      unlockAudioEngine();
-      initIosHaptics();
-      isEngaged = false;
-      btn.classList.add('is-pressing');
-
-      if (hapticTimer) clearTimeout(hapticTimer);
-
-      // 320ms deliberate deep press threshold
-      hapticTimer = setTimeout(() => {
-        startRecordingSession();
-      }, 320);
-    });
-
-    // If device supports real physical 3D Touch (iPhone 6s to XS)
-    btn.addEventListener('touchforcechange', (e) => {
-      const touch = e.touches && e.touches[0];
-      if (!touch) return;
-      const force = touch.force !== undefined ? touch.force : 0;
-      if (force >= 0.35) {
-        if (hapticTimer) clearTimeout(hapticTimer);
-        startRecordingSession();
-      } else if (force < 0.12 && isEngaged) {
-        stopRecordingSession();
-      }
-    }, { passive: true });
-
-    // Mac Force Touch Trackpad (WebKit deep press)
-    btn.addEventListener('webkitmouseforcechanged', (e) => {
-      if (e.webkitForce >= 2) {
-        if (hapticTimer) clearTimeout(hapticTimer);
-        startRecordingSession();
-      } else if (e.webkitForce < 1.3 && isEngaged) {
-        stopRecordingSession();
-      }
-    });
-
-    // Pointer cancel or release
-    btn.addEventListener('pointerup', stopRecordingSession);
-    btn.addEventListener('pointercancel', stopRecordingSession);
-    btn.addEventListener('touchend', stopRecordingSession);
-    btn.addEventListener('touchcancel', stopRecordingSession);
+    btn.addEventListener('pointerdown', handlePressDown);
+    btn.addEventListener('pointerup', handlePressRelease);
+    btn.addEventListener('pointercancel', handlePressRelease);
+    btn.addEventListener('touchend', handlePressRelease);
+    btn.addEventListener('touchcancel', handlePressRelease);
 
     // Completely swallow ALL regular clicks!
-    // Normal tap/click will NEVER activate recording or behave like a normal button.
     btn.addEventListener('click', (e) => {
       e.stopImmediatePropagation();
       e.preventDefault();
