@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use crate::gps::{drawRadarCanvas, HudTheme};
+use crate::gps::{cycleMapMode, drawRadarCanvas, getMapMode, HudTheme};
 
 #[component]
 pub fn Radar(
@@ -10,6 +10,10 @@ pub fn Radar(
     theme: HudTheme,
 ) -> Element {
     let mut zoom_level = use_signal(|| 16.0);
+    let mut map_mode = use_signal(|| {
+        let m = getMapMode();
+        if m.is_empty() { "satellite".to_string() } else { m }
+    });
 
     let lat = latitude;
     let lon = longitude;
@@ -25,11 +29,23 @@ pub fn Radar(
         }
     });
 
+    let mode_label = match map_mode().as_str() {
+        "satellite" => "🛰️ SATELLITE",
+        "streets" => "🗺️ STRADE",
+        _ => "🌃 GTA DARK",
+    };
+
     rsx! {
         div { class: "gta6-radar-wrapper",
-            div { class: "gta6-radar-badge",
+            div {
+                class: "gta6-radar-badge",
+                title: "Tocca per cambiare mappa: Satellite / Strade / GTA Dark",
+                onclick: move |_| {
+                    let next = cycleMapMode();
+                    map_mode.set(next);
+                },
                 span { class: "radar-badge-pulse" }
-                span { "GTA VI · LIVE MAP" }
+                span { class: "radar-mode-btn", "{mode_label}" }
                 span { class: "radar-zoom-label", "Z{zm as i32}" }
             }
 

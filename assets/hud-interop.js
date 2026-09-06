@@ -1,4 +1,4 @@
-// RayNeo Air 4 Pro - GTA 6 Real-Time ArcGIS Dark Map Engine & HUD Bridge
+// RayNeo Air 4 Pro - GTA 6 Real-Time Satellite & Map Engine + AR Camera Passthrough
 window.RayNeoHUD = {
   wakeLock: null,
   watchId: null,
@@ -6,6 +6,9 @@ window.RayNeoHUD = {
   compassHeading: 0,
   batteryLevel: 1.0,
   batteryCharging: false,
+  cameraStream: null,
+  isCameraActive: false,
+  locationName: 'RICERCA POSIZIONE GPS...',
   reverseGeocodeCache: {},
   tileCache: new Map(),
   sweepAngle: 0,
@@ -18,11 +21,123 @@ window.RayNeoHUD = {
     heading: 45,
     speed: 0,
     zoom: 16,
+    mapMode: (typeof localStorage !== 'undefined' && localStorage.getItem('rayneo_map_mode')) || 'satellite',
     theme: {}
+  },
+
+  // Switch between 'satellite', 'streets', and 'dark'
+  setMapMode(mode) {
+    if (['satellite', 'streets', 'dark'].includes(mode)) {
+      this.state.mapMode = mode;
+      try {
+        localStorage.setItem('rayneo_map_mode', mode);
+      } catch (e) {}
+    }
+  },
+
+  getMapMode() {
+    return this.state.mapMode || 'satellite';
+  },
+
+  cycleMapMode() {
+    const modes = ['satellite', 'streets', 'dark'];
+    const currentIdx = modes.indexOf(this.getMapMode());
+    const nextMode = modes[(currentIdx + 1) % modes.length];
+    this.setMapMode(nextMode);
+    return nextMode;
+  },
+
+  // AR Camera Passthrough: stream real-world back camera behind HUD
+  async toggleCamera() {
+    const video = document.getElementById('ar-camera-video');
+    if (!video) return false;
+
+    if (this.isCameraActive) {
+      if (this.cameraStream) {
+        this.cameraStream.getTracks().forEach(t => t.stop());
+        this.cameraStream = null;
+      }
+      video.srcObject = null;
+      video.style.display = 'none';
+      this.isCameraActive = false;
+      return false;
+    } else {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert('Fotocamera non supportata da questo browser.');
+          return false;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          },
+          audio: false
+        });
+        this.cameraStream = stream;
+        video.srcObject = stream;
+        await video.play();
+        video.style.display = 'block';
+        this.isCameraActive = true;
+        return true;
+      } catch (err) {
+        console.warn('Camera permission or stream error:', err);
+        alert('Permesso fotocamera negato o non disponibile: ' + (err.message || err));
+        return false;
+      }
+    }
+  },
+
+  isCameraRunning() {
+    return !!this.isCameraActive;
+  },
+
+  getLocationName() {
+    return this.locationName || '';
+  },
+
+  // Explicit High-Accuracy GPS Trigger on user tap
+  triggerGpsFix(callback) {
+    if (!('geolocation' in navigator)) {
+      alert('Geolocalizzazione non supportata.');
+      return;
+    }
+    this.locationName = '📍 AGGANCIO SATELLITI GPS...';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = pos.coords;
+        this.state.lat = coords.latitude;
+        this.state.lon = coords.longitude;
+        if (coords.speed !== null && coords.speed >= 0) {
+          this.state.speed = coords.speed * 3.6;
+        }
+        if (coords.heading !== null && coords.heading >= 0) {
+          this.state.heading = coords.heading;
+        }
+        this.reverseGeocode(coords.latitude, coords.longitude).then((name) => {
+          if (name) this.locationName = name;
+        });
+        if (callback && typeof callback === 'function') {
+          callback(coords.latitude, coords.longitude, coords.accuracy);
+        }
+      },
+      (err) => {
+        console.warn('Geolocation error:', err);
+        alert('GPS non disponibile. Assicurati di aver concesso l\'accesso alla posizione a Safari: ' + err.message);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 0
+      }
+    );
   },
 
   // Called from Rust or JS to update coordinates and start 60fps engine
   updateTelemetry(lat, lon, heading, speed, zoom, theme) {
+    const latChanged = Math.abs(this.state.lat - lat) > 0.0005;
+    const lonChanged = Math.abs(this.state.lon - lon) > 0.0005;
     this.state.lat = lat;
     this.state.lon = lon;
     if (heading !== undefined && heading >= 0) {
@@ -31,6 +146,12 @@ window.RayNeoHUD = {
     this.state.speed = speed;
     if (zoom) this.state.zoom = zoom;
     if (theme) this.state.theme = theme;
+
+    if (latChanged || lonChanged) {
+      this.reverseGeocode(lat, lon).then((name) => {
+        if (name) this.locationName = name;
+      });
+    }
 
     if (!this.isLoopRunning) {
       this.startAnimationLoop('gta-radar-canvas');
@@ -157,15 +278,26 @@ window.RayNeoHUD = {
       if (res.ok) {
         const data = await res.json();
         const addr = data.address || {};
-        const road = addr.road || addr.pedestrian || addr.cycleway || addr.suburb || addr.neighbourhood || addr.city || 'SAN ANDREAS';
-        const formatted = road.toUpperCase();
+        const road = addr.road || addr.pedestrian || addr.cycleway || addr.suburb || addr.neighbourhood;
+        const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+        let formatted = '';
+        if (road && city) {
+          formatted = `${road}, ${city}`.toUpperCase();
+        } else if (road) {
+          formatted = road.toUpperCase();
+        } else if (city) {
+          formatted = city.toUpperCase();
+        } else {
+          formatted = 'POSIZIONE GPS AGGANCIATA';
+        }
         this.reverseGeocodeCache[key] = formatted;
+        this.locationName = formatted;
         return formatted;
       }
     } catch (e) {
       console.warn('Geocoding error:', e);
     }
-    return 'LOS SANTOS';
+    return this.locationName || 'GPS REALE';
   },
 
   // Web Mercator slippy tile conversions
@@ -181,20 +313,29 @@ window.RayNeoHUD = {
     );
   },
 
-  // High quality ArcGIS Dark Gray Canvas tile loader (zero API key needed)
+  // High quality Multi-Mode Tile Loader (Real Satellite, Real Streets, GTA Dark Canvas)
   getTileImage(z, x, y) {
-    const key = `${z}/${y}/${x}`;
+    const mode = this.getMapMode();
+    const key = `${mode}/${z}/${y}/${x}`;
     if (this.tileCache.has(key)) {
       return this.tileCache.get(key);
     }
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    // ArcGIS Dark Gray Base: z / y / x (level / row / col)
-    img.src = `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+    if (mode === 'satellite') {
+      // High-resolution real photographic satellite imagery (Esri World Imagery)
+      img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+    } else if (mode === 'streets') {
+      // High-contrast real street map with street names and building outlines (Esri World Street Map)
+      img.src = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${z}/${y}/${x}`;
+    } else {
+      // GTA 6 Dark Gray Base Canvas
+      img.src = `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+    }
     img.onerror = () => {
       if (!img._fallback) {
         img._fallback = true;
-        // Fallback to CartoDB or OpenStreetMap tile if ArcGIS is slow
+        // Fallback to OpenStreetMap tile if primary server is unreachable
         img.src = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
       }
     };
@@ -218,6 +359,7 @@ window.RayNeoHUD = {
     const heading = this.state.heading;
     const currentZoom = Math.round(this.state.zoom || 16);
     const theme = this.state.theme || {};
+    const mode = this.getMapMode();
 
     // 60fps radar sweep rotation
     this.sweepAngle = (this.sweepAngle + 2) % 360;
@@ -251,8 +393,14 @@ window.RayNeoHUD = {
     ctx.translate(cx, cy);
     ctx.rotate((-heading * Math.PI) / 180);
 
-    // Apply GTA 6 high-contrast neon filter on real map tiles
-    ctx.filter = 'contrast(160%) brightness(125%)';
+    // Filter tuned per mode
+    if (mode === 'satellite') {
+      ctx.filter = 'contrast(115%) brightness(105%) saturate(110%)';
+    } else if (mode === 'streets') {
+      ctx.filter = 'contrast(120%) brightness(95%)';
+    } else {
+      ctx.filter = 'contrast(160%) brightness(125%)';
+    }
 
     // Draw 3x3 grid of real map tiles
     for (let dx = -1; dx <= 1; dx++) {

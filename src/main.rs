@@ -9,7 +9,10 @@ use components::radar::Radar;
 use components::settings::SettingsModal;
 use components::speedometer::Speedometer;
 use components::status_bars::StatusBars;
-use gps::{getBatteryLevel, getHeading, isBatteryCharging, toggleFullscreen, GpsData, HudTheme};
+use gps::{
+    getBatteryLevel, getHeading, getLocationName, isBatteryCharging, isCameraRunning,
+    toggleCamera, toggleFullscreen, triggerGpsFix, GpsData, HudTheme,
+};
 
 use dioxus::prelude::*;
 use wasm_bindgen::prelude::*;
@@ -28,6 +31,7 @@ fn App() -> Element {
     let mut theme = use_signal(HudTheme::gta_classic);
     let mut show_settings = use_signal(|| false);
     let mut clock_str = use_signal(|| "00:00:00".to_string());
+    let mut camera_active = use_signal(|| false);
 
     // Clock update & GPS/Heading polling loop using use_hook to run ONCE on mount
     use_hook(move || {
@@ -46,8 +50,16 @@ fn App() -> Element {
                     clock_str.set(format!("{:02}:{:02}:{:02}", hours, minutes, seconds));
                 }
 
-                // Check simulation vs real sensors without reactive dependency
+                // Update reverse geocoded street/city name if available
+                let real_loc = getLocationName();
                 let mut data = gps_data.peek().clone();
+                let mut loc_changed = false;
+                if !real_loc.is_empty() && real_loc != data.location_name {
+                    data.location_name = real_loc;
+                    loc_changed = true;
+                }
+
+                // Check simulation vs real sensors without reactive dependency
                 if data.is_simulated {
                     // Smooth simulated drive around Los Santos / Milan
                     let sim_time = (tick_counter as f64) * 0.05;
@@ -64,7 +76,7 @@ fn App() -> Element {
                 } else {
                     // Real hardware heading & battery from RayNeoHUD bridge
                     let sensor_hdg = getHeading();
-                    let mut changed = false;
+                    let mut changed = loc_changed;
                     if sensor_hdg > 0.0 && (sensor_hdg - data.heading).abs() > 0.2 {
                         data.heading = sensor_hdg;
                         changed = true;
@@ -171,7 +183,23 @@ fn App() -> Element {
                         let curr = show_settings();
                         show_settings.set(!curr);
                     },
-                    "⚙ AR SETUP",
+                    "⚙ SETUP",
+                }
+                button {
+                    class: if camera_active() { "hud-btn hud-btn-active" } else { "hud-btn" },
+                    title: "Attiva la fotocamera posteriore dell'iPhone per vedere il mondo reale",
+                    onclick: move |_| {
+                        toggleCamera();
+                        let active = isCameraRunning();
+                        camera_active.set(active);
+                    },
+                    if camera_active() { "📷 CAMERA ON" } else { "📷 CAMERA AR" }
+                }
+                button {
+                    class: "hud-btn",
+                    title: "Aggancia coordinate GPS reali ad alta precisione",
+                    onclick: move |_| triggerGpsFix(),
+                    "📍 GPS REALE",
                 }
                 button {
                     class: "hud-btn",

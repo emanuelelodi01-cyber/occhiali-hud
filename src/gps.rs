@@ -27,7 +27,7 @@ impl Default for GpsData {
             accuracy: 8.0,
             battery_level: 0.95,
             is_charging: false,
-            location_name: "LOS SANTOS".to_string(),
+            location_name: "LOCALIZZAZIONE GPS...".to_string(),
             wanted_stars: 0,
             is_simulated: false,
         }
@@ -54,6 +54,27 @@ extern "C" {
 
     #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
     pub fn requestOrientation();
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn toggleCamera();
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn isCameraRunning() -> bool;
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn getMapMode() -> String;
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn setMapMode(mode: &str);
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn cycleMapMode() -> String;
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn triggerGpsFix();
+
+    #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
+    pub fn getLocationName() -> String;
 
     #[wasm_bindgen(js_namespace = ["window", "RayNeoHUD"])]
     pub fn drawRadarCanvas(

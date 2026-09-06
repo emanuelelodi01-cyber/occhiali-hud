@@ -37,7 +37,7 @@ html, body {
   position: relative;
   width: 100vw;
   height: 100vh;
-  background: #000000;
+  background: transparent;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -194,7 +194,24 @@ html, body {
   letter-spacing: 1px;
   color: #00f0ff;
   text-shadow: 0 0 6px rgba(0, 240, 255, 0.6);
-  padding-left: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  background: rgba(0, 15, 25, 0.6);
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  border-radius: 6px;
+  width: fit-content;
+  transition: all 0.2s ease;
+}
+
+.gta6-radar-badge:hover {
+  background: rgba(0, 35, 55, 0.85);
+  border-color: #00f0ff;
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+}
+
+.radar-mode-btn {
+  font-weight: 900;
+  letter-spacing: 0.5px;
 }
 
 .radar-badge-pulse {
@@ -396,7 +413,7 @@ html, body {
   display: flex;
   gap: 8px;
   z-index: 50;
-  opacity: 0.2;
+  opacity: 0.85;
   transition: opacity 0.3s ease;
 }
 
@@ -406,21 +423,29 @@ html, body {
 }
 
 .hud-btn {
-  background: rgba(10, 20, 15, 0.8);
+  background: rgba(10, 20, 15, 0.85);
   border: 1px solid var(--hud-primary);
   color: var(--hud-primary);
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 11px;
   font-family: 'Orbitron', sans-serif;
   border-radius: 4px;
   cursor: pointer;
   box-shadow: 0 0 6px var(--hud-glow);
   outline: none;
+  transition: all 0.2s ease;
 }
 
 .hud-btn:hover {
   background: var(--hud-primary);
   color: #000000;
+}
+
+.hud-btn-active {
+  background: #ff007f !important;
+  color: #ffffff !important;
+  border-color: #ff007f !important;
+  box-shadow: 0 0 12px #ff007f !important;
 }
 
 /* Modal Settings for RayNeo AR Calibration */
